@@ -1,0 +1,569 @@
+"""Context package building for focused task context."""
+from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+from ..storage import read_jsonl
+from ..config import get_brief_path, MANIFEST_FILE, RELATIONSHIPS_FILE, CONTEXT_DIR, MEMORY_FILE
+from ..memory.store import MemoryStore
+from ..contracts.detector import ContractDetector
+from ..tracing.tracer import PathTracer
+from ..models import CallRelationship
+
+
+@dataclass
+class ContextPackage:
+    """A focused context package for a task."""
+    query: str
+    primary_files: list[dict[str, Any]] = field(default_factory=list)
+    related_files: list[dict[str, Any]] = field(default_factory=list)
+    patterns: list[dict[str, Any]] = field(default_factory=list)
+    execution_paths: list[dict[str, str]] = field(default_factory=list)  # {name, flow}
+    contracts: list[str] = field(default_factory=list)
+
+    def to_markdown(self) -> str:
+        """Convert to markdown for display/consumption."""
+        lines = [
+            f"# Context for: {self.query}",
+            "",
+        ]
+
+        if self.primary_files:
+            lines.append("## Primary Files")
+            for f in self.primary_files:
+                lines.append(f"### {f['path']}")
+                if f.get('description'):
+                    lines.append(f.get('description'))
+                lines.append("")
+
+        if self.related_files:
+            lines.append("## Related Files")
+            for f in self.related_files:
+                lines.append(f"- {f['path']}")
+                if f.get('reason'):
+                    lines.append(f"  *Reason: {f['reason']}*")
+            lines.append("")
+
+        if self.patterns:
+            lines.append("## Relevant Patterns")
+            for p in self.patterns:
+                lines.append(f"- **{p['key']}**: {p['value']}")
+            lines.append("")
+
+        if self.execution_paths:
+            lines.append("## Execution Flows")
+            lines.append("")
+            for path in self.execution_paths:
+                if isinstance(path, dict):
+                    lines.append(path.get("flow", path.get("name", str(path))))
+                else:
+                    lines.append(f"- {path}")  # Backwards compat
+                lines.append("")
+
+        if self.contracts:
+            lines.append("## Contracts")
+            for contract in self.contracts:
+                lines.append(f"- {contract}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
+def search_manifest(
+    brief_path: Path,
+    query: str,
+    max_results: int = 10
+) -> list[tuple[int, dict[str, Any]]]:
+    """Search manifest entries by query terms.
+
+    Searches across:
+    - File paths
+    - Class names
+    - Function names
+    - Docstrings
+
+    Returns:
+        List of (score, record) tuples sorted by score descending.
+    """
+    import re
+    # Strip punctuation from terms
+    query_terms = [
+        re.sub(r'[^\w_]', '', t.lower())
+        for t in query.split()
+    ]
+    query_terms = [t for t in query_terms if len(t) > 2]
+    scored_records: list[tuple[int, dict[str, Any]]] = []
+
+    for record in read_jsonl(brief_path / MANIFEST_FILE):
+        score = 0
+        record_type = record.get("type", "")
+
+        # Score based on name matches
+        name = record.get("name", "").lower()
+        path = record.get("path", "").lower()
+        file_path = record.get("file", "").lower()
+        docstring = (record.get("docstring") or "").lower()
+
+        for term in query_terms:
+            # Exact name match is very valuable
+            if term == name:
+                score += 10
+            elif term in name:
+                score += 5
+
+            # Path match
+            if term in path or term in file_path:
+                score += 2
+
+            # Docstring match
+            if term in docstring:
+                score += 3
+
+            # Class method match (e.g., "create" matches "TaskManager.create_task")
+            if record_type == "function":
+                full_name = f"{record.get('class_name', '')}.{name}".lower()
+                if term in full_name:
+                    score += 4
+
+        if score > 0:
+            scored_records.append((score, record))
+
+    # Sort by score descending
+    scored_records.sort(key=lambda x: -x[0])
+    return scored_records[:max_results]
+
+
+def expand_with_call_graph(
+    brief_path: Path,
+    seed_files: list[str],
+    seed_functions: list[str],
+    max_related: int = 5
+) -> list[dict[str, str]]:
+    """Expand seed files/functions using call graph relationships.
+
+    Args:
+        brief_path: Path to .brief directory
+        seed_files: Initial file paths
+        seed_functions: Initial function names (e.g., "TaskManager.create_task")
+        max_related: Maximum related files to return
+
+    Returns:
+        List of {path, reason} dicts for related files
+    """
+    related: list[dict[str, str]] = []
+    seen_files = set(seed_files)
+
+    # Load relationships
+    calls: list[CallRelationship] = []
+    for rel in read_jsonl(brief_path / RELATIONSHIPS_FILE):
+        if rel.get("type") == "calls":
+            calls.append(CallRelationship.model_validate(rel))
+
+    # Find functions called by seed functions
+    for func_name in seed_functions:
+        for call in calls:
+            if call.from_func == func_name or call.from_func.endswith(f".{func_name}"):
+                # Found a callee
+                if call.file not in seen_files:
+                    seen_files.add(call.file)
+                    related.append({
+                        "path": call.file,
+                        "reason": f"contains {call.to_func} called by {func_name}"
+                    })
+
+    # Find functions that call seed functions
+    for func_name in seed_functions:
+        for call in calls:
+            if call.to_func == func_name or call.to_func.endswith(f".{func_name}"):
+                # Found a caller
+                if call.file not in seen_files:
+                    seen_files.add(call.file)
+                    related.append({
+                        "path": call.file,
+                        "reason": f"contains {call.from_func} which calls {func_name}"
+                    })
+
+    return related[:max_related]
+
+
+def get_file_description(brief_path: Path, file_path: str) -> str | None:
+    """Get the description for a file if it exists."""
+    context_file = brief_path / CONTEXT_DIR / "files" / (file_path.replace("/", "__").replace("\\", "__") + ".md")
+    if context_file.exists():
+        return context_file.read_text()
+    return None
+
+
+def get_file_context(brief_path: Path, file_path: str) -> dict[str, Any]:
+    """Get full context for a specific file."""
+    # Get manifest record
+    file_record = None
+    classes: list[dict[str, Any]] = []
+    functions: list[dict[str, Any]] = []
+
+    for record in read_jsonl(brief_path / MANIFEST_FILE):
+        if record["type"] == "file" and record["path"] == file_path:
+            file_record = record
+        elif record.get("file") == file_path:
+            if record["type"] == "class":
+                classes.append(record)
+            elif record["type"] == "function":
+                functions.append(record)
+
+    # Get relationships
+    imports: list[str] = []
+    imported_by: list[str] = []
+    for rel in read_jsonl(brief_path / RELATIONSHIPS_FILE):
+        if rel.get("type") == "imports":
+            if rel["from_file"] == file_path:
+                imports.append(rel["to_file"])
+            elif rel["to_file"] == file_path:
+                imported_by.append(rel["from_file"])
+
+    # Get description
+    description = get_file_description(brief_path, file_path)
+
+    return {
+        "path": file_path,
+        "record": file_record,
+        "classes": classes,
+        "functions": functions,
+        "imports": imports,
+        "imported_by": imported_by,
+        "description": description
+    }
+
+
+def get_relevant_contracts(
+    brief_path: Path,
+    base_path: Path,
+    query: str,
+    file_paths: Optional[list[str]] = None
+) -> list[str]:
+    """Get contracts relevant to a query or file paths.
+
+    Args:
+        brief_path: Path to .brief directory
+        base_path: Base path for the project
+        query: Query string to match against
+        file_paths: Optional list of file paths to match contracts by affected files
+
+    Returns:
+        List of contract descriptions as strings
+    """
+    relevant = []
+    query_terms = query.lower().split()
+
+    # Try to detect contracts (faster than parsing markdown)
+    try:
+        detector = ContractDetector(brief_path, base_path)
+        contracts = detector.detect_all()
+
+        for contract in contracts:
+            score = 0
+
+            # Match against query terms
+            name_lower = contract.name.lower()
+            rule_lower = contract.rule.lower()
+            for term in query_terms:
+                if term in name_lower:
+                    score += 2
+                if term in rule_lower:
+                    score += 1
+                if term in contract.category.lower():
+                    score += 1
+
+            # Match against file paths
+            if file_paths:
+                for fp in file_paths:
+                    if fp in contract.files_affected:
+                        score += 3
+                    # Also check if file is in the same directory as affected files
+                    fp_dir = str(Path(fp).parent)
+                    if any(fp_dir in str(Path(af).parent) for af in contract.files_affected):
+                        score += 1
+
+            if score > 0:
+                relevant.append((score, f"[{contract.category}] {contract.name}: {contract.rule}"))
+
+        # Sort by score and return top contracts
+        relevant.sort(key=lambda x: -x[0])
+        return [desc for _, desc in relevant[:10]]
+
+    except Exception:
+        # Fallback: parse contracts.md if detection fails
+        contracts_file = brief_path / CONTEXT_DIR / "contracts.md"
+        if contracts_file.exists():
+            content = contracts_file.read_text()
+            # Extract contract names and rules from markdown
+            current_name = ""
+            for line in content.split("\n"):
+                if line.startswith("## Contract: "):
+                    current_name = line.replace("## Contract: ", "")
+                elif line.startswith("### Rule") and current_name:
+                    # Next non-empty line is the rule
+                    pass
+                elif current_name and any(term in line.lower() for term in query_terms):
+                    relevant.append(current_name)
+                    current_name = ""
+
+        return relevant[:10]
+
+
+def get_relevant_paths(
+    brief_path: Path,
+    base_path: Path,
+    query: str,
+    file_paths: Optional[list[str]] = None
+) -> list[dict[str, str]]:
+    """Get execution paths relevant to a query or file paths.
+
+    Args:
+        brief_path: Path to .brief directory
+        base_path: Base path for the project
+        query: Query string to match against
+        file_paths: Optional list of file paths to match paths by related files
+
+    Returns:
+        List of dicts with 'name' and 'flow' keys containing flow diagrams
+    """
+    relevant: list[tuple[int, dict[str, str]]] = []
+    query_terms = query.lower().split()
+
+    try:
+        tracer = PathTracer(brief_path, base_path)
+        path_names = tracer.list_paths()
+
+        for path_name in path_names:
+            score = 0
+
+            # Match path name against query
+            name_lower = path_name.lower()
+            for term in query_terms:
+                if term in name_lower:
+                    score += 2
+
+            # Load path as object to check content and generate flow
+            path_obj = tracer.load_path_as_object(path_name)
+            if path_obj:
+                # Check if query terms appear in any step
+                for step in path_obj.steps:
+                    step_text = f"{step.function} {step.description}".lower()
+                    for term in query_terms:
+                        if term in step_text:
+                            score += 1
+
+                # Check if any of our file paths are in the path's files
+                if file_paths:
+                    for fp in file_paths:
+                        if fp in path_obj.related_files:
+                            score += 3
+
+                if score > 0:
+                    relevant.append((score, {
+                        "name": path_name,
+                        "flow": path_obj.to_flow()
+                    }))
+
+        # Sort by score and return top 3 (since flows are larger)
+        relevant.sort(key=lambda x: -x[0])
+        return [item for _, item in relevant[:3]]
+
+    except Exception:
+        return []
+
+
+def build_context_for_file(
+    brief_path: Path,
+    file_path: str,
+    base_path: Optional[Path] = None
+) -> ContextPackage:
+    """Build a context package for working on a specific file."""
+    package = ContextPackage(query=f"file: {file_path}")
+
+    if base_path is None:
+        base_path = brief_path.parent
+
+    # Get primary file context
+    primary = get_file_context(brief_path, file_path)
+    package.primary_files.append(primary)
+
+    # Add imported files as related
+    for imp_path in primary["imports"]:
+        imp_context = get_file_context(brief_path, imp_path)
+        imp_context["reason"] = "imported by primary file"
+        package.related_files.append(imp_context)
+
+    # Add files that import this as related
+    for imp_path in primary["imported_by"][:5]:  # Limit
+        imp_context = get_file_context(brief_path, imp_path)
+        imp_context["reason"] = "imports primary file"
+        package.related_files.append(imp_context)
+
+    # Get relevant patterns from memory using MemoryStore
+    try:
+        memory_store = MemoryStore(brief_path)
+        patterns = memory_store.recall_for_file(file_path)
+        for pattern in patterns[:10]:
+            package.patterns.append({
+                "key": pattern.key,
+                "value": pattern.value,
+                "tags": pattern.tags,
+                "confidence": pattern.confidence
+            })
+    except Exception:
+        # Fallback to basic keyword matching
+        memory_file = brief_path / MEMORY_FILE
+        if memory_file.exists():
+            for pattern in read_jsonl(memory_file):
+                key_lower = pattern.get("key", "").lower()
+                if any(word in key_lower for word in file_path.lower().split("/")):
+                    package.patterns.append(pattern)
+
+    # Get relevant contracts
+    all_files = [file_path] + primary["imports"] + primary["imported_by"][:5]
+    package.contracts = get_relevant_contracts(
+        brief_path, base_path, file_path, all_files
+    )
+
+    # Get relevant execution paths
+    package.execution_paths = get_relevant_paths(
+        brief_path, base_path, file_path, all_files
+    )
+
+    return package
+
+
+def build_context_for_query(
+    brief_path: Path,
+    query: str,
+    search_func: Callable[[str], list[dict[str, Any]]] | None = None,
+    base_path: Optional[Path] = None,
+    include_contracts: bool = True,
+    include_paths: bool = True,
+    include_patterns: bool = True
+) -> ContextPackage:
+    """Build a context package for a task description.
+
+    Args:
+        brief_path: Path to .brief directory
+        query: Task description or search query
+        search_func: Optional search function for semantic search
+        base_path: Base path for the project (defaults to brief_path.parent)
+        include_contracts: Whether to include relevant contracts
+        include_paths: Whether to include relevant execution paths
+        include_patterns: Whether to include relevant memory patterns
+
+    Returns:
+        ContextPackage with files, patterns, contracts, and execution paths
+    """
+    package = ContextPackage(query=query)
+
+    if base_path is None:
+        base_path = brief_path.parent
+
+    # Collect all file paths for matching
+    all_file_paths: list[str] = []
+
+    if search_func:
+        # Use semantic search to find relevant files
+        results = search_func(query)
+        for result in results[:5]:  # Top 5
+            context = get_file_context(brief_path, result["path"])
+            context["relevance"] = result.get("score", 0)
+            package.primary_files.append(context)
+            all_file_paths.append(result["path"])
+
+        # Add related files
+        for primary in package.primary_files[:3]:
+            for imp_path in primary.get("imports", [])[:2]:
+                imp_context = get_file_context(brief_path, imp_path)
+                imp_context["reason"] = f"imported by {primary['path']}"
+                if imp_context not in package.related_files:
+                    package.related_files.append(imp_context)
+                    all_file_paths.append(imp_path)
+    else:
+        # Improved keyword search across manifest (classes, functions, docstrings)
+        scored_results = search_manifest(brief_path, query, max_results=20)
+
+        # Group by file and collect matched functions
+        file_scores: dict[str, int] = {}
+        file_functions: dict[str, list[str]] = {}
+
+        for score, record in scored_results:
+            if record["type"] == "file":
+                file_path = record["path"]
+                file_scores[file_path] = file_scores.get(file_path, 0) + score
+            elif record["type"] in ("class", "function"):
+                file_path = record["file"]
+                file_scores[file_path] = file_scores.get(file_path, 0) + score
+                # Track function names for call graph expansion
+                func_name = record.get("name", "")
+                class_name = record.get("class_name")
+                if class_name:
+                    func_name = f"{class_name}.{func_name}"
+                if file_path not in file_functions:
+                    file_functions[file_path] = []
+                file_functions[file_path].append(func_name)
+
+        # Sort files by score and take top ones
+        sorted_files = sorted(file_scores.items(), key=lambda x: -x[1])
+
+        seed_functions: list[str] = []
+        for file_path, score in sorted_files[:5]:
+            context = get_file_context(brief_path, file_path)
+            context["relevance"] = score
+            package.primary_files.append(context)
+            all_file_paths.append(file_path)
+            # Collect functions for call graph expansion
+            seed_functions.extend(file_functions.get(file_path, []))
+
+        # Expand using call graph
+        if seed_functions:
+            call_related = expand_with_call_graph(
+                brief_path, all_file_paths, seed_functions[:10], max_related=5
+            )
+            for rel in call_related:
+                if rel["path"] not in all_file_paths:
+                    context = get_file_context(brief_path, rel["path"])
+                    context["reason"] = rel["reason"]
+                    package.related_files.append(context)
+                    all_file_paths.append(rel["path"])
+
+    # Get relevant patterns from memory using MemoryStore
+    if include_patterns:
+        try:
+            memory_store = MemoryStore(brief_path)
+            # Use the context-aware recall
+            query_keywords = query.split()
+            patterns = memory_store.recall_for_context(query_keywords)
+            for pattern in patterns[:10]:
+                package.patterns.append({
+                    "key": pattern.key,
+                    "value": pattern.value,
+                    "tags": pattern.tags,
+                    "confidence": pattern.confidence
+                })
+        except Exception:
+            # Fallback to basic keyword matching
+            memory_file = brief_path / MEMORY_FILE
+            if memory_file.exists():
+                for pattern in read_jsonl(memory_file):
+                    tags = pattern.get("tags", [])
+                    key = pattern.get("key", "")
+                    if any(term in key.lower() or term in str(tags).lower()
+                           for term in query.lower().split()):
+                        package.patterns.append(pattern)
+
+    # Get relevant contracts
+    if include_contracts:
+        package.contracts = get_relevant_contracts(
+            brief_path, base_path, query, all_file_paths
+        )
+
+    # Get relevant execution paths
+    if include_paths:
+        package.execution_paths = get_relevant_paths(
+            brief_path, base_path, query, all_file_paths
+        )
+
+    return package
