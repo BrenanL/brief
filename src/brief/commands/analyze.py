@@ -85,6 +85,13 @@ def analyze_directory(
     typer.echo(f"  Functions: {stats['module_functions']} module-level, {stats['methods']} methods")
     typer.echo(f"  Relationships: {import_count} imports, {call_count} calls")
 
+    # Auto-create trace definitions for detected entry points
+    from ..tracing.tracer import PathTracer
+    tracer = PathTracer(brief_path, base)
+    created_traces = tracer.auto_create_trace_definitions(include_tests=False)
+    if created_traces:
+        typer.echo(f"  Entry points: {len(created_traces)} traces auto-created")
+
 
 @app.command("all")
 def analyze_all(

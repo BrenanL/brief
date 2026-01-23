@@ -142,6 +142,22 @@ class PythonFileParser:
             for n in ast.walk(node)
         )
 
+        # Extract decorators
+        decorators = []
+        for decorator in node.decorator_list:
+            try:
+                if isinstance(decorator, ast.Name):
+                    decorators.append(decorator.id)
+                elif isinstance(decorator, ast.Attribute):
+                    decorators.append(ast.unparse(decorator))
+                elif isinstance(decorator, ast.Call):
+                    # For @decorator(args), extract just the decorator name
+                    decorators.append(ast.unparse(decorator.func))
+                else:
+                    decorators.append(ast.unparse(decorator))
+            except Exception:
+                pass  # Skip decorators we can't parse
+
         return ManifestFunctionRecord(
             name=node.name,
             file=str(self.file_path.relative_to(self.base_path)),
@@ -152,6 +168,7 @@ class PythonFileParser:
             returns=returns,
             is_async=isinstance(node, ast.AsyncFunctionDef),
             is_generator=is_generator,
+            decorators=decorators,
             docstring=ast.get_docstring(node)
         )
 

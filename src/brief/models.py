@@ -56,6 +56,7 @@ class ManifestFunctionRecord(BaseModel):
     returns: Optional[str] = None
     is_async: bool = False
     is_generator: bool = False
+    decorators: list[str] = Field(default_factory=list)  # e.g., ["app.command", "staticmethod"]
     docstring: Optional[str] = None
     description: Optional[str] = None
 
@@ -176,6 +177,21 @@ class MemoryRecord(BaseModel):
     created: datetime = Field(default_factory=datetime.now)
     last_used: Optional[datetime] = None
     use_count: int = 0
+
+
+# === Trace Definitions ===
+
+class TraceDefinition(BaseModel):
+    """Definition for a saved execution trace.
+
+    Stores metadata only - trace content is regenerated dynamically.
+    """
+
+    name: str  # Unique identifier, e.g., "cli-analyze"
+    entry_point: str  # Function name, e.g., "analyze_directory" or "ClassName.method"
+    description: str = ""  # Human-readable description
+    category: str = "other"  # cli, api, test, other
+    created: datetime = Field(default_factory=datetime.now)
 
 
 # === Config ===

@@ -144,9 +144,11 @@ brief context related src/tasks.py  # Context for specific file
 
 ### Step 6: Trace Execution Paths (No LLM)
 ```bash
-brief trace create "task-creation" "TaskManager.create_task"
-brief trace list
-brief trace show "task-creation"
+# Traces are auto-created during analysis for detected entry points
+brief trace list                    # List all traces
+brief trace show cli-task-create    # Show execution flow (compact)
+brief trace show cli-task-create -v # Show with full code snippets
+brief trace define my-trace MyClass.method  # Define custom trace
 ```
 
 ### Step 7: Generate Descriptions (LLM - Optional)
@@ -422,12 +424,18 @@ if task:
 
 ### Execution Paths
 
+Traces are **dynamically regenerated** from current code - they never go stale. Entry points (functions with `@app.command`, `@app.route`, etc.) are auto-detected during `brief analyze all`.
+
 | Command | Description | LLM? |
 |---------|-------------|------|
-| `brief trace create <name> <entry>` | Trace from entry point | No |
-| `brief trace show <name>` | Show saved path | No |
-| `brief trace list` | List all paths | No |
-| `brief trace delete <name>` | Delete a traced path | No |
+| `brief trace list` | List all trace definitions | No |
+| `brief trace show <name>` | Show execution flow (regenerated dynamically) | No |
+| `brief trace show <name> -v` | Show with full code snippets | No |
+| `brief trace define <name> <entry>` | Define a custom trace | No |
+| `brief trace discover` | Find entry points in codebase | No |
+| `brief trace discover --auto` | Auto-create traces for all entry points | No |
+| `brief trace update <name>` | Update trace definition | No |
+| `brief trace delete <name>` | Delete a trace definition | No |
 
 ## Architecture
 
@@ -448,7 +456,7 @@ Brief stores all data in `.brief/` directory:
     ├── files/           # LLM-generated file descriptions (*.md)
     ├── modules/         # LLM-generated module descriptions (*.md)
     ├── contracts.md     # Detected contracts
-    └── paths/           # Execution path traces (*.md)
+    └── traces.jsonl     # Trace definitions (content regenerated dynamically)
 ```
 
 ### Component Overview

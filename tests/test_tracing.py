@@ -328,10 +328,10 @@ class TestTracing:
 
 
 class TestPathStorage:
-    """Tests for saving and loading paths."""
+    """Tests for saving and loading paths (now uses traces.jsonl)."""
 
     def test_save_path(self, brief_path):
-        """Test saving a path."""
+        """Test saving a path creates trace definition in traces.jsonl."""
         brief_dir, base = brief_path
         tracer = PathTracer(brief_dir, base)
 
@@ -339,10 +339,13 @@ class TestPathStorage:
         file_path = tracer.save_path(path)
 
         assert file_path.exists()
-        assert file_path.name == "test-path.md"
+        assert file_path.name == "traces.jsonl"
 
-        content = file_path.read_text()
-        assert "# Path: Test Path" in content
+        # Verify the trace definition was saved
+        definitions = tracer.list_trace_definitions()
+        assert len(definitions) == 1
+        assert definitions[0].name == "Test Path"
+        assert definitions[0].entry_point == "main_func"
 
     def test_list_paths(self, brief_path):
         """Test listing saved paths."""
@@ -359,11 +362,11 @@ class TestPathStorage:
         paths = tracer.list_paths()
 
         assert len(paths) == 2
-        assert "path-one" in paths
-        assert "path-two" in paths
+        assert "Path One" in paths
+        assert "Path Two" in paths
 
     def test_load_path(self, brief_path):
-        """Test loading a saved path."""
+        """Test loading a saved path regenerates markdown dynamically."""
         brief_dir, base = brief_path
         tracer = PathTracer(brief_dir, base)
 
@@ -371,8 +374,8 @@ class TestPathStorage:
         path = tracer.create_path("Load Test", "main_func")
         tracer.save_path(path)
 
-        # Load it back
-        content = tracer.load_path("load-test")
+        # Load it back (now regenerates dynamically)
+        content = tracer.load_path("Load Test")
 
         assert content is not None
         assert "# Path: Load Test" in content
@@ -395,14 +398,14 @@ class TestPathStorage:
         tracer.save_path(path)
 
         # Verify it exists
-        assert "delete-me" in tracer.list_paths()
+        assert "Delete Me" in tracer.list_paths()
 
         # Delete it
-        result = tracer.delete_path("delete-me")
+        result = tracer.delete_path("Delete Me")
         assert result is True
 
         # Verify it's gone
-        assert "delete-me" not in tracer.list_paths()
+        assert "Delete Me" not in tracer.list_paths()
 
     def test_delete_path_not_found(self, brief_path):
         """Test deleting non-existent path."""
@@ -411,3 +414,124 @@ class TestPathStorage:
 
         result = tracer.delete_path("nonexistent")
         assert result is False
+
+
+class TestTraceDefinitions:
+    """Tests for trace definition storage."""
+
+    def test_save_trace_definition(self, brief_path):
+        """Test saving a trace definition."""
+        from brief.models import TraceDefinition
+
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        definition = TraceDefinition(
+            name="test-trace",
+            entry_point="main_func",
+            description="Test trace definition",
+            category="cli"
+        )
+
+        tracer.save_trace_definition(definition)
+
+        # Verify it was saved
+        loaded = tracer.get_trace_definition("test-trace")
+        assert loaded is not None
+        assert loaded.name == "test-trace"
+        assert loaded.entry_point == "main_func"
+        assert loaded.category == "cli"
+
+    def test_update_trace_definition(self, brief_path):
+        """Test updating an existing trace definition."""
+        from brief.models import TraceDefinition
+
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        # Save initial
+        definition = TraceDefinition(
+            name="update-test",
+            entry_point="main_func",
+            description="Original"
+        )
+        tracer.save_trace_definition(definition)
+
+        # Update it
+        definition.description = "Updated description"
+        definition.entry_point = "helper_func"
+        tracer.save_trace_definition(definition)
+
+        # Verify update
+        loaded = tracer.get_trace_definition("update-test")
+        assert loaded.description == "Updated description"
+        assert loaded.entry_point == "helper_func"
+
+        # Should still only have one definition
+        assert len(tracer.list_trace_definitions()) == 1
+
+    def test_get_callers(self, brief_path):
+        """Test getting callers of a function."""
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        # helper_func is called by main_func
+        callers = tracer.get_callers("helper_func")
+        assert len(callers) == 1
+        assert callers[0]["function"] == "main_func"
+
+    def test_trace_to_entry_point(self, brief_path):
+        """Test tracing upward to find entry point."""
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        # utility is called by helper_func, which is called by main_func
+        path = tracer.trace_to_entry_point("utility")
+
+        assert "utility" in path
+        # Should find the call chain up to main_func
+        assert "helper_func" in path or "main_func" in path
+
+    def test_generate_trace_from_definition(self, brief_path):
+        """Test generating trace from a definition."""
+        from brief.models import TraceDefinition
+
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        definition = TraceDefinition(
+            name="gen-test",
+            entry_point="main_func",
+            description="Generate test"
+        )
+
+        path = tracer.generate_trace_from_definition(definition)
+
+        assert path is not None
+        assert path.name == "gen-test"
+        assert path.entry_point == "main_func"
+        assert len(path.steps) >= 1
+
+    def test_generate_trace_missing_entry_point(self, brief_path):
+        """Test generating trace for missing entry point."""
+        from brief.models import TraceDefinition
+
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        definition = TraceDefinition(
+            name="missing",
+            entry_point="nonexistent_func",
+            description="Missing entry point"
+        )
+
+        path = tracer.generate_trace_from_definition(definition)
+        assert path is None
+
+    def test_check_entry_point_exists(self, brief_path):
+        """Test checking if entry point exists."""
+        brief_dir, base = brief_path
+        tracer = PathTracer(brief_dir, base)
+
+        assert tracer.check_entry_point_exists("main_func") is True
+        assert tracer.check_entry_point_exists("nonexistent") is False

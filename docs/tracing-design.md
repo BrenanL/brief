@@ -64,211 +64,49 @@ This means traces are **dynamic** - computed at query time from the call graph, 
 
 ---
 
-## Current State
+## Design: Hybrid Approach
 
-### What We Have
+### Core Insight: Store What to Trace, Not the Trace Itself
 
-1. **Call graph in `relationships.jsonl`**
-   - `{"type": "calls", "from_func": "TableCommand.execute", "to_func": "validate_table", ...}`
-   - We know who calls whom
+Instead of storing complete trace content that can become stale, we store **trace definitions** (metadata) and **regenerate content dynamically**.
 
-2. **Static tracing (`PathTracer`)**
-   - Can trace DOWN from a function to its callees
-   - Saves traces as markdown files
-   - Used when user manually creates traces
-
-3. **Trace storage in `context/paths/`**
-   - Pre-created traces saved as markdown
-   - Searched during context retrieval
-
-### What's Missing
-
-1. **No decorator tracking**
-   - Parser doesn't extract `@app.command`, `@app.route`, etc.
-   - Can't automatically identify entry points
-
-2. **No upward tracing**
-   - Can trace from function → callees (down)
-   - Cannot trace from function → callers (up) to find entry points
-
-3. **No dynamic trace generation**
-   - Traces must be pre-created manually
-   - Context queries only search existing traces
-
-4. **No entry point detection**
-   - No way to identify CLI commands, API endpoints, public interfaces
-   - User must manually specify entry points
-
----
-
-## Implementation Plan
-
-### Phase 1: Parser Enhancement
-
-**Add decorator extraction to `parser.py`**
-
-```python
-class ManifestFunctionRecord(BaseModel):
-    # ... existing fields ...
-    decorators: list[str] = Field(default_factory=list)  # NEW
+**Trace definition** (stored in `.brief/context/traces.jsonl`):
+```json
+{"name": "cli-analyze", "entry_point": "analyze_directory", "description": "Analyze codebase", "category": "cli", "created": "2024-01-22"}
 ```
 
-Extract decorators during AST parsing:
-```python
-for decorator in node.decorator_list:
-    if isinstance(decorator, ast.Name):
-        decorators.append(decorator.id)
-    elif isinstance(decorator, ast.Call):
-        decorators.append(ast.unparse(decorator.func))
+**Trace content** (generated on demand):
+```
+Entry: analyze_directory (src/brief/commands/analyze.py)
+  → ManifestBuilder.analyze_directory
+    → find_python_files
+    → find_doc_files
 ```
 
-### Phase 2: Bidirectional Call Graph
+### Why This Works
 
-**Add `get_callers()` to `PathTracer`**
+1. **Never stale** - Content always regenerated from current call graph
+2. **Curated library** - You still have named, documented traces
+3. **Discoverable** - Can browse all traces, see what flows exist
+4. **Lightweight** - Just storing metadata, not full traces
+5. **Simple staleness** - Only check: does entry point still exist?
 
-Currently we have:
-```python
-def get_callees(self, file: str, function: str) -> list[str]:
-    """Get functions that a function calls."""
-```
+### Why File Hashes Aren't Enough
 
-Add:
-```python
-def get_callers(self, function: str) -> list[dict]:
-    """Get functions that call this function."""
-    callers = []
-    for rel in self._load_relationships():
-        if rel.get("type") == "calls" and rel["to_func"] == function:
-            callers.append({
-                "function": rel["from_func"],
-                "file": rel["file"],
-                "line": rel["line"]
-            })
-    return callers
-```
-
-### Phase 3: Entry Point Detection
-
-**Identify entry points automatically**
-
-Entry point heuristics:
-1. **Decorated functions** - `@app.command`, `@app.route`, `@click.command`, `@pytest.fixture`
-2. **No callers** - Functions at the top of the call graph
-3. **Public class methods** - Methods without underscore prefix on key classes
-4. **Test functions** - `test_*` functions (entry points for test execution)
+Even if no individual file changes, the **call graph can change**:
 
 ```python
-def find_entry_points(self) -> list[dict]:
-    """Find likely entry points in the codebase."""
-    entry_points = []
+# Before: validate() calls check_schema() only
+def validate():
+    check_schema()
 
-    # 1. Functions with entry point decorators
-    for record in self._load_manifest():
-        if record["type"] == "function":
-            decorators = record.get("decorators", [])
-            if any(d in ENTRY_POINT_DECORATORS for d in decorators):
-                entry_points.append(record)
-
-    # 2. Functions with no callers
-    all_callees = set()
-    for rel in self._load_relationships():
-        if rel["type"] == "calls":
-            all_callees.add(rel["to_func"])
-
-    for record in self._load_manifest():
-        if record["type"] == "function":
-            func_name = record["name"]
-            if func_name not in all_callees:
-                entry_points.append(record)
-
-    return entry_points
+# After: validate() now also calls check_permissions()
+def validate():
+    check_schema()
+    check_permissions()  # NEW CALL
 ```
 
-### Phase 4: Upward Tracing
-
-**Trace from a function UP to its entry point**
-
-```python
-def trace_to_entry_point(self, function_name: str, max_depth: int = 10) -> list[str]:
-    """Trace upward from a function to find its entry point(s)."""
-    visited = set()
-    path = [function_name]
-    current = function_name
-
-    while len(path) < max_depth:
-        callers = self.get_callers(current)
-        if not callers:
-            # No callers = this is an entry point
-            break
-
-        # Follow the first caller (could be smarter about this)
-        caller = callers[0]["function"]
-        if caller in visited:
-            break  # Cycle detected
-
-        visited.add(caller)
-        path.insert(0, caller)
-        current = caller
-
-    return path
-```
-
-### Phase 5: Dynamic Trace Generation
-
-**Generate traces at query time**
-
-```python
-def generate_dynamic_trace(self, target_functions: list[str]) -> ExecutionPath:
-    """Generate an execution path dynamically from target functions."""
-
-    # 1. Find entry points by tracing UP from targets
-    entry_points = set()
-    for func in target_functions:
-        path_to_entry = self.trace_to_entry_point(func)
-        if path_to_entry:
-            entry_points.add(path_to_entry[0])
-
-    # 2. For each entry point, trace DOWN through targets
-    all_steps = []
-    for entry in entry_points:
-        steps = self.trace_from_function(entry, max_depth=10)
-        # Filter to only include steps relevant to our targets
-        relevant_steps = [s for s in steps if s.function in target_functions
-                         or any(t in s.calls_to for t in target_functions)]
-        all_steps.extend(relevant_steps)
-
-    # 3. Build execution path
-    return ExecutionPath(
-        name="dynamic",
-        description=f"Execution path through {', '.join(target_functions)}",
-        entry_point=list(entry_points)[0] if entry_points else target_functions[0],
-        steps=all_steps,
-        related_files=list(set(s.file for s in all_steps))
-    )
-```
-
-### Phase 6: Integration with Context Retrieval
-
-**Update `build_context_for_query()` to use dynamic tracing**
-
-```python
-def build_context_for_query(brief_path, query, search_func, base_path):
-    # ... existing search logic ...
-
-    # Get target functions from search results
-    target_functions = [r["name"] for r in results if r["type"] == "function"]
-
-    # Generate dynamic trace instead of searching pre-made traces
-    tracer = PathTracer(brief_path, base_path)
-    if target_functions:
-        dynamic_path = tracer.generate_dynamic_trace(target_functions)
-        package.execution_paths = [{
-            "name": "Relevant Execution Flow",
-            "flow": dynamic_path.to_flow()
-        }]
-
-    return package
-```
+With stored traces + hash checking, you'd need to track hashes of ALL files in the trace AND detect new relationships. With dynamic regeneration, this just works.
 
 ---
 
@@ -343,48 +181,343 @@ OUTPUT:
 
 ---
 
-## Pre-Created vs Dynamic Traces
+## Real-World Use Cases
 
-Both have value:
+### Use Case 1: Initial Setup
 
-| Pre-Created Traces | Dynamic Traces |
-|-------------------|----------------|
-| Named, documented paths | Generated on-demand |
-| "workspace-creation", "auth-flow" | Based on query targets |
-| Curated with descriptions | Automatic, no curation |
-| For known important flows | For any query |
+```bash
+brief init
+brief analyze all
+```
 
-**Recommendation**: Keep both. Pre-created traces for important documented flows, dynamic traces for everything else.
+**What happens:**
+1. Parse all code → manifest.jsonl
+2. Extract calls → relationships.jsonl
+3. Detect entry points (decorated functions, CLI commands)
+4. Auto-create trace definitions:
+
+```
+Analysis complete:
+  Python files: 58
+  Functions: 147
+  Relationships: 2205 calls
+
+Entry points detected: 23
+  CLI commands: 15 (auto-traced)
+  Test functions: 204 (skipped - use --include-tests)
+
+Trace definitions created: 15
+  cli-init           init_command
+  cli-analyze        analyze_directory
+  cli-context-get    context_get
+  ...
+```
+
+User immediately has a seeded trace library covering main workflows.
+
+### Use Case 2: Querying Context
+
+```bash
+brief context get "file analysis"
+```
+
+**What happens:**
+1. Search finds `analyze_file()`, `PythonFileParser.parse()`
+2. Check saved traces: "cli-analyze" matches (description mentions "analyze")
+3. Dynamic trace: trace UP from `analyze_file()` → finds entry point
+4. Return both the saved trace and dynamic trace through specific functions
+
+### Use Case 3: Browsing All Traces
+
+```bash
+brief trace list
+```
+
+```
+Trace Definitions (15):
+
+  CLI Commands:
+    ✓ cli-init           init_command              Initialize Brief
+    ✓ cli-analyze        analyze_directory         Analyze codebase
+    ✓ cli-context-get    context_get               Get context for query
+
+  Other:
+    ✗ old-export         ExportManager.export      (entry point not found)
+
+  ✓ = entry point exists, ✗ = entry point missing
+```
+
+### Use Case 4: Viewing a Trace
+
+```bash
+brief trace show cli-analyze
+```
+
+**What happens:**
+1. Load metadata: `entry_point = "analyze_directory"`
+2. Regenerate trace from current call graph
+3. Display flow diagram (default):
+
+```
+# cli-analyze: Analyze codebase
+
+Entry: analyze_directory (src/brief/commands/analyze.py)
+  → ManifestBuilder.__init__
+  → ManifestBuilder.analyze_directory
+    → find_python_files
+    → find_doc_files
+    → analyze_python_file
+      → PythonFileParser.parse
+```
+
+With `-v` flag, shows full code snippets for each step.
+
+### Use Case 5: Code Changes Mid-Session
+
+Developer adds a new call in `analyze_directory()`:
+
+```python
+def analyze_directory():
+    # ... existing code ...
+    validate_config()  # NEW
+```
+
+Next `brief trace show cli-analyze` automatically includes `validate_config()`. No staleness detection needed - dynamic regeneration just works.
+
+### Use Case 6: Refactoring
+
+Developer renames `ManifestBuilder` to `CodeAnalyzer`.
+
+The trace still works because:
+- Entry point `analyze_directory` still exists
+- Dynamic regeneration follows current calls
+- Now shows `CodeAnalyzer` instead of `ManifestBuilder`
+
+If the entry point itself is renamed/deleted:
+```bash
+brief trace list
+  ✗ cli-analyze    old_analyze_func    (entry point not found)
+```
+
+User can update: `brief trace update cli-analyze --entry new_analyze_func`
+
+### Use Case 7: New Feature Added
+
+Developer adds `@app.command("export")`.
+
+```bash
+brief analyze all   # or brief analyze refresh
+```
+
+```
+Found 1 new entry point:
+  export_data (@app.command)
+
+Auto-created trace definition: cli-export
+```
+
+Trace library grows as codebase grows.
 
 ---
 
-## Entry Point Decorator Patterns
+## Entry Point Detection
 
-Common decorators that indicate entry points:
+### Entry Point Decorator Patterns
 
 ```python
 ENTRY_POINT_DECORATORS = [
     # CLI frameworks
-    "app.command",
-    "click.command",
-    "typer.command",
+    "app.command", "click.command", "typer.command",
 
     # Web frameworks
-    "app.route",
-    "app.get", "app.post", "app.put", "app.delete",
-    "router.get", "router.post",
+    "app.route", "app.get", "app.post", "app.put", "app.delete",
+    "router.get", "router.post", "router.put", "router.delete",
 
-    # Testing
-    "pytest.fixture",
-    "pytest.mark",
+    # FastAPI
+    "api_router.get", "api_router.post",
 
-    # Async
-    "asyncio.coroutine",
+    # Flask
+    "blueprint.route",
 
-    # Class decorators
-    "dataclass",
-    "app.middleware",
+    # Django (detected by pattern, not decorator)
+    # Views in urls.py
 ]
+```
+
+### Entry Point Categories
+
+| Category | Detection Method | Auto-trace? |
+|----------|-----------------|-------------|
+| CLI commands | `@app.command`, `@click.command` | Yes |
+| API routes | `@app.route`, `@router.get` | Yes |
+| Main functions | `if __name__ == "__main__"` | Yes |
+| Test functions | `test_*` prefix | No (use `--include-tests`) |
+| Public methods | No `_` prefix on key classes | Configurable |
+
+---
+
+## CLI Commands
+
+```bash
+# List all trace definitions
+brief trace list
+
+# Show a trace (regenerated dynamically)
+brief trace show <name>           # Flow diagram
+brief trace show <name> -v        # With code snippets
+
+# Define a new trace manually
+brief trace define <name> <entry_point> [-d description]
+
+# Update a trace definition
+brief trace update <name> [--entry new_entry] [--description new_desc]
+
+# Delete a trace definition
+brief trace delete <name>
+
+# Auto-discover entry points and create traces
+brief trace discover              # Interactive
+brief trace discover --auto       # Auto-create all
+```
+
+---
+
+## Storage Format
+
+### Trace Definitions (`.brief/context/traces.jsonl`)
+
+```json
+{"name": "cli-init", "entry_point": "init_command", "description": "Initialize Brief in a directory", "category": "cli", "created": "2024-01-22T10:30:00"}
+{"name": "cli-analyze", "entry_point": "analyze_directory", "description": "Analyze Python files in a directory", "category": "cli", "created": "2024-01-22T10:30:00"}
+{"name": "cli-context-get", "entry_point": "context_get", "description": "Get context for a query", "category": "cli", "created": "2024-01-22T10:30:00"}
+```
+
+### No More `.brief/context/paths/*.md`
+
+The old approach stored full markdown traces. These are replaced by:
+- Trace definitions in `traces.jsonl`
+- Dynamic regeneration when viewing
+
+---
+
+## Implementation Components
+
+### 1. Parser Enhancement: Decorator Extraction
+
+Add to `ManifestFunctionRecord`:
+```python
+decorators: list[str] = Field(default_factory=list)
+```
+
+Extract during AST parsing:
+```python
+for decorator in node.decorator_list:
+    if isinstance(decorator, ast.Name):
+        decorators.append(decorator.id)
+    elif isinstance(decorator, ast.Call):
+        decorators.append(ast.unparse(decorator.func))
+    elif isinstance(decorator, ast.Attribute):
+        decorators.append(ast.unparse(decorator))
+```
+
+### 2. Bidirectional Call Graph
+
+Add to `PathTracer`:
+```python
+def get_callers(self, function: str) -> list[dict]:
+    """Get functions that call this function."""
+    callers = []
+    for rel in self._load_relationships():
+        if rel.get("type") == "calls" and rel["to_func"] == function:
+            callers.append({
+                "function": rel["from_func"],
+                "file": rel["file"],
+                "line": rel["line"]
+            })
+    return callers
+```
+
+### 3. Upward Tracing
+
+```python
+def trace_to_entry_point(self, function_name: str, max_depth: int = 10) -> list[str]:
+    """Trace upward from a function to find its entry point."""
+    path = [function_name]
+    current = function_name
+    visited = set()
+
+    while len(path) < max_depth:
+        if current in visited:
+            break
+        visited.add(current)
+
+        callers = self.get_callers(current)
+        if not callers:
+            break  # No callers = entry point
+
+        caller = callers[0]["function"]
+        path.insert(0, caller)
+        current = caller
+
+    return path
+```
+
+### 4. Entry Point Detection
+
+```python
+def find_entry_points(self) -> list[dict]:
+    """Find likely entry points in the codebase."""
+    entry_points = []
+
+    for record in self._load_manifest():
+        if record["type"] != "function":
+            continue
+
+        decorators = record.get("decorators", [])
+
+        # Check for entry point decorators
+        for dec in decorators:
+            if any(pattern in dec for pattern in ENTRY_POINT_DECORATORS):
+                entry_points.append({
+                    "function": record["name"],
+                    "file": record["file"],
+                    "decorator": dec,
+                    "category": categorize_decorator(dec)
+                })
+                break
+
+    return entry_points
+```
+
+### 5. Dynamic Trace Generation
+
+```python
+def generate_dynamic_trace(self, target_functions: list[str]) -> ExecutionPath:
+    """Generate execution path dynamically from target functions."""
+
+    # Find entry points by tracing UP
+    entry_points = []
+    for func in target_functions:
+        path = self.trace_to_entry_point(func)
+        if path:
+            entry_points.append(path[0])
+
+    # Trace DOWN from entry points
+    if entry_points:
+        entry = entry_points[0]  # Use first found
+        steps = self.trace_from_function(entry, max_depth=10)
+    else:
+        # No entry point found, trace from targets directly
+        steps = []
+        for func in target_functions:
+            steps.extend(self.trace_from_function(func, max_depth=5))
+
+    return ExecutionPath(
+        name="dynamic",
+        entry_point=entry_points[0] if entry_points else target_functions[0],
+        steps=steps,
+        related_files=list(set(s.file for s in steps))
+    )
 ```
 
 ---
@@ -393,8 +526,10 @@ ENTRY_POINT_DECORATORS = [
 
 After implementation:
 
-1. `brief context get "table validation"` returns execution flow automatically
-2. No manual trace creation required for basic queries
-3. Entry points detected from decorators and call graph
-4. Agent sees full pipeline context, not just isolated files
-5. Reduces missed dependencies and broken changes
+1. `brief analyze all` auto-detects entry points and creates trace definitions
+2. `brief trace list` shows all defined traces with validity status
+3. `brief trace show <name>` regenerates and displays current trace
+4. `brief context get "query"` includes dynamic execution flows
+5. No manual trace creation required for basic queries
+6. Traces are never stale - always reflect current code
+7. Agent sees full pipeline context, reducing missed dependencies

@@ -10,6 +10,7 @@ This file tracks issues, ideas, and plans. Read this first when starting work.
 
 ## CURRENT ISSUES
 
+- need to do more robust testing on when and how the agents are actually using brief. I'm not convinced the prompting and hooks are sufficient right now to constrain/encourage usage. The pre-tool call hook may not actually be going to the agent, and instead just to the ui of claude code
 - context.py, the autogenerate descriptions thing, can have a flag to force doing this, but should also be a config behavior. I want default to be yes, generate. It is unreasonable to have to remember to type in flags each time if you want fresh context. 
 - need a pass on our rulesets for context package generation. Ideally, we will make this configurable at some point, so users can decide what a good context package looks like. For now, we need to define things like: how many files to return? should we limit the number, or should the number inherently be different based on what you're looking for? what proximity for embedding search is relevant? Should we refine search terms before embedding search (as in, generate multiple sentences to cover different solution spaces around the query, and vector search for each)? how to verify what execution pipelines we return? what exactly are we returning, is it important/necessary, are we not returning something we should? how much of what could go in a context package is not yet implemented in brief? can we better BLUF the context packages (gen an llm summary of the package to put at top, list an index of what is in the context package, etc)?
 - in doc exclude config, what about date/time formats other than YYYY-MM-DD?
@@ -27,36 +28,25 @@ This file tracks issues, ideas, and plans. Read this first when starting work.
 # 12. Generate descriptions (uses placeholder without BAML/LLM)
   brief describe batch --limit 5
 ```
-- `brief memory remember <key> <value>` and `brief memory recall <key>` are very cumbersome. instead we want `brief memory add <> <>` and `brief memory get <>`. I like the idea of aliasing these two as well, so you can optionally do `brief remember <key> <value>` and `brief recall <key>`. 
-- typo - add space in this, and show command properly (what value you must give to it)
-```
-(brief) user@LAPTOP-9IEU4KBE:~/dev/brief$ brief trace list
-No execution paths traced yet.
-Use 'brieftrace create' to trace a path.
-```
-- `brief trace` help messages are not explanatory enough, hard to know what to do. 
-- how are we automating the tracing process? we cannot expect the user to figure out all entrypoints and manually create traces for them. 
-  - automated generation of traces is a bit tricky.
-without brief, agents try to predict what files have the code they need to modify, and search for them. Most of the code they find is irrelevant, and what they really need is not a few code files but all of the code snippets throughout the execution path they want to modify code on. So instead, brief determines that they are likely to touch x execution path, and can return the relevant flow diagrams of what files, classes, and functions are touched and how data flows through the pipeline. This way, the agent is far less likely to miss some element of the pipeline and make mistakes. So, we have a bit of chicken and egg, where you figure out the files you need from the trace, and you figure out what trace you need from the files. 
-  - how can we auto-detect entrypoints? knowing to trace starting from them would be beneficial, they are likely to cover all main pathways. so any api endpoint, or cli command, etc can get us part way. 
-  - we could also identify what function tripped the search to return a file, then trace up to the entry point, down to the finish, return traces dynamically.
-  - and how are we detecting if traces are stale? if any file in the trace path is modified, we need to re-trace. 
-- `brief trace show <trace_name>` shows all code fragments in the trace. What I really want to see is an overview of the trace (what data and metadata is there) and the flow diagram. if i want all the code, then maybe a `-v` or `--show-all` would show it. Flow diagrams already make it into the context package when it pulls the trace, so logic is built in
-- how are we detecting if files are modified? we cant use normal methods (like git, etc) because once you commit, then they are no longer flagged so how do you know if your trace, description, etc is outdated? we need to review our stale detector and how that is implemented and consumed. 
+- `brief memory remember <key> <value>` and `brief memory recall <key>` are very cumbersome. instead we want `brief memory add <> <>` and `brief memory get <>`. I like the idea of aliasing these two as well, so you can optionally do `brief remember <key> <value>` and `brief recall <key>`.
+- need a method of clearing and re-generating all of the brief 'cache' files without damaging the descriptions, summaries, etc. The analyzed etc files are 'free' and the llm-generated ones cost money (and more time). So clearing and re-analyzing should be easy. this is also nice for dev and for rolling out updates when we change how the files work etc.
+- Not sure how it works right now, but for file context in the context package, I like the idea of returning the signatures if no description/summary, but not returning both the description and signatures. Too much if we do that.
+- the help messages from the `brief trace` branch of commands are now great. Let's go through every other command in here and get them all up to the same quality.
 ---
 ## Notes / Open Questions
-*No open questions at this time*
 
+### Execution Path Tracing - Known Limitations
+The tracing system works well for functions that call other functions directly, but has these limitations:
 
-### Execution Paths
-- **Current state**: Execution paths are manually created with `brief trace create <name> <entry-point>`
-- **How they work**: `PathTracer` uses the call relationship data from manifest to follow function calls from an entry point
-- **Auto-tracing idea**: Could auto-identify entry points by finding:
-  - CLI command functions (functions in `commands/*.py` decorated with `@app.command()`)
-  - `if __name__ == "__main__"` blocks
-  - Public API functions (functions without leading underscore in `__init__.py`)
-- **Refreshing**: Currently no auto-refresh. Would need to re-run `brief trace create` when code changes. Could add `brief trace refresh` command.
-- **Main paths**: Could auto-trace from all CLI entry points with `brief trace auto` command
+1. **Cannot trace through class instantiation**: When code does `builder = ManifestBuilder()`, we can't follow calls to `ManifestBuilder.__init__` or trace what the constructor does. Would need to detect class instantiation and map to `__init__` methods.
+
+2. **Cannot resolve variable-based method calls**: When code does `builder.analyze_directory()`, we see the call as `builder.analyze_directory` but can't resolve that `builder` is a `ManifestBuilder` instance. Would need type inference or runtime analysis.
+
+3. **Entry point detection is decorator-based only**: Currently detects `@app.command`, `@app.route`, etc. Does not yet detect:
+   - `if __name__ == "__main__"` blocks
+   - Public API functions (non-underscore functions in `__init__.py`)
+
+These limitations mean some traces are shorter than ideal when most calls are to class methods or external libraries. The core path through module-level functions traces well.
 
 ---
 
@@ -243,3 +233,27 @@ I would like to see when the agent calls `brief context get` and other commands 
 - **Validation**: When creating a task with `--depends`, validates all dependency IDs exist
 - **CLI**: `brief task ready` shows ready tasks, `brief task blocked` shows blocked tasks
 - **Active task shown**: `brief task list` marks active task with `*`
+
+### [RESOLVED 2026-01-22] Execution Path Tracing Overhaul
+**Original Problems**:
+- Traces were manually created with `brief trace create`, no automation
+- No way to auto-detect entry points
+- Traces could become stale when code changed
+- `brief trace show` showed all code fragments instead of flow diagrams
+- `brief analyze all` didn't include tracing
+- Help messages were confusing
+
+**Resolution**: Complete overhaul of the tracing system:
+- **Auto-detection**: Entry points detected via decorators (`@app.command`, `@app.route`, etc.)
+- **Auto-creation**: `brief analyze all` now auto-creates trace definitions for all entry points
+- **Dynamic regeneration**: Traces stored as metadata only; content regenerated on demand (never stale)
+- **Compact flow view**: `brief trace show` displays indented call tree; `-v` for full code
+- **New commands**: `list`, `show`, `define`, `update`, `delete`, `discover`
+- **Depth tracking**: Call hierarchy shown with proper indentation
+- **Context integration**: Traces appear in `brief context get` output under "Execution Flows"
+- **Strict matching**: Prevents false positives when resolving function calls
+
+**Known limitations** (documented in Notes section):
+- Cannot trace through class instantiation
+- Cannot resolve variable-based method calls
+- Entry point detection is decorator-based only
