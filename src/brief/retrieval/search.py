@@ -88,6 +88,31 @@ def keyword_search(
                     if term in full_name:
                         score += 4
 
+            # Documentation file matches
+            if record_type == "doc":
+                title = (record.get("title") or "").lower()
+                headings = record.get("headings", [])
+                first_para = (record.get("first_paragraph") or "").lower()
+
+                # Title match is valuable
+                if term == title:
+                    score += 10
+                elif term in title:
+                    score += 6
+
+                # Heading matches
+                for heading in headings:
+                    heading_lower = heading.lower()
+                    if term == heading_lower:
+                        score += 8
+                    elif term in heading_lower:
+                        score += 4
+                        break  # Don't add for every heading
+
+                # First paragraph match
+                if term in first_para:
+                    score += 3
+
         if score > 0:
             # Determine the file path for this record
             target_file = record.get("file") or record.get("path", "")

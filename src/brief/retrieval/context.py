@@ -10,6 +10,72 @@ from ..tracing.tracer import PathTracer
 from ..models import CallRelationship
 
 
+def format_function_signature(func: dict[str, Any]) -> str:
+    """Format a function record into a readable signature string.
+
+    Args:
+        func: Function record from manifest containing name, params, returns, etc.
+
+    Returns:
+        Formatted signature like "async def foo(bar: str, baz: int = 5) -> bool"
+    """
+    # Build prefix (async/def)
+    prefix = "async def " if func.get("is_async") else "def "
+
+    # Build parameter string
+    params = func.get("params", [])
+    param_strs = []
+    for p in params:
+        if isinstance(p, dict):
+            param_str = p.get("name", "?")
+            if p.get("type_hint"):
+                param_str += f": {p['type_hint']}"
+            if p.get("default"):
+                param_str += f" = {p['default']}"
+        else:
+            param_str = str(p)
+        param_strs.append(param_str)
+
+    params_str = ", ".join(param_strs)
+
+    # Build return type
+    returns = func.get("returns")
+    returns_str = f" -> {returns}" if returns else ""
+
+    # Add generator indicator
+    if func.get("is_generator"):
+        if returns:
+            returns_str = f" -> Generator[{returns}]"
+        else:
+            returns_str = " -> Generator"
+
+    # Build full name (with class if method)
+    name = func.get("name", "?")
+    class_name = func.get("class_name")
+    full_name = f"{class_name}.{name}" if class_name else name
+
+    return f"{prefix}{full_name}({params_str}){returns_str}"
+
+
+def format_class_signature(cls: dict[str, Any]) -> str:
+    """Format a class record into a readable signature string.
+
+    Args:
+        cls: Class record from manifest containing name, bases, methods.
+
+    Returns:
+        Formatted signature like "class Foo(BaseClass):" with method list
+    """
+    name = cls.get("name", "?")
+    bases = cls.get("bases", [])
+    bases_str = f"({', '.join(bases)})" if bases else ""
+
+    methods = cls.get("methods", [])
+    methods_str = f"  # methods: {', '.join(methods)}" if methods else ""
+
+    return f"class {name}{bases_str}:{methods_str}"
+
+
 @dataclass
 class ContextPackage:
     """A focused context package for a task."""
@@ -20,8 +86,15 @@ class ContextPackage:
     execution_paths: list[dict[str, str]] = field(default_factory=list)  # {name, flow}
     contracts: list[str] = field(default_factory=list)
 
-    def to_markdown(self) -> str:
-        """Convert to markdown for display/consumption."""
+    def to_markdown(self, include_signatures: bool = True) -> str:
+        """Convert to markdown for display/consumption.
+
+        Args:
+            include_signatures: Whether to include function/class signatures (default True)
+
+        Returns:
+            Markdown-formatted string
+        """
         lines = [
             f"# Context for: {self.query}",
             "",
@@ -30,9 +103,45 @@ class ContextPackage:
         if self.primary_files:
             lines.append("## Primary Files")
             for f in self.primary_files:
-                lines.append(f"### {f['path']}")
-                if f.get('description'):
-                    lines.append(f.get('description'))
+                # Check if this is a doc record (has title) vs code file
+                if f.get('record_type') == 'doc' or f.get('title'):
+                    # Documentation file rendering
+                    lines.append(f"### {f['path']}")
+                    if f.get('title'):
+                        lines.append(f"**Title:** {f['title']}")
+                    if f.get('first_paragraph'):
+                        lines.append(f"\n{f['first_paragraph']}")
+                    if f.get('headings'):
+                        lines.append("")
+                        lines.append("**Sections:**")
+                        for heading in f['headings'][:10]:  # Limit to top 10
+                            lines.append(f"- {heading}")
+                else:
+                    # Code file rendering
+                    lines.append(f"### {f['path']}")
+                    if f.get('description'):
+                        lines.append(f.get('description'))
+
+                    # Include class and function signatures
+                    if include_signatures:
+                        classes = f.get('classes', [])
+                        functions = f.get('functions', [])
+
+                        if classes or functions:
+                            lines.append("")
+                            lines.append("**Signatures:**")
+                            lines.append("```python")
+
+                            # Classes first
+                            for cls in classes:
+                                lines.append(format_class_signature(cls))
+
+                            # Then functions
+                            for func in functions:
+                                lines.append(format_function_signature(func))
+
+                            lines.append("```")
+
                 lines.append("")
 
         if self.related_files:
@@ -80,6 +189,7 @@ def search_manifest(
     - Class names
     - Function names
     - Docstrings
+    - Doc titles and headings
 
     Returns:
         List of (score, record) tuples sorted by score descending.
@@ -124,6 +234,30 @@ def search_manifest(
                 if term in full_name:
                     score += 4
 
+            # Documentation file matches
+            if record_type == "doc":
+                title = (record.get("title") or "").lower()
+                headings = record.get("headings", [])
+                first_para = (record.get("first_paragraph") or "").lower()
+
+                # Title match is very valuable
+                if term == title:
+                    score += 10
+                elif term in title:
+                    score += 6
+
+                # Heading matches
+                for heading in headings:
+                    heading_lower = heading.lower()
+                    if term == heading_lower:
+                        score += 8
+                    elif term in heading_lower:
+                        score += 4
+
+                # First paragraph match
+                if term in first_para:
+                    score += 3
+
         if score > 0:
             scored_records.append((score, record))
 
@@ -140,6 +274,9 @@ def expand_with_call_graph(
 ) -> list[dict[str, str]]:
     """Expand seed files/functions using call graph relationships.
 
+    Only follows calls to functions that exist in the manifest (skips stdlib
+    and external library calls like typer.Option, Path.exists, etc).
+
     Args:
         brief_path: Path to .brief directory
         seed_files: Initial file paths
@@ -152,49 +289,114 @@ def expand_with_call_graph(
     related: list[dict[str, str]] = []
     seen_files = set(seed_files)
 
+    # Build a lookup of internal functions -> their files
+    # This allows us to skip external/stdlib calls
+    internal_funcs: dict[str, str] = {}  # func_name -> file_path
+    for record in read_jsonl(brief_path / MANIFEST_FILE):
+        if record["type"] == "function":
+            name = record["name"]
+            class_name = record.get("class_name")
+            file_path = record["file"]
+            # Add both forms: "func_name" and "ClassName.func_name"
+            internal_funcs[name] = file_path
+            if class_name:
+                internal_funcs[f"{class_name}.{name}"] = file_path
+
     # Load relationships
     calls: list[CallRelationship] = []
     for rel in read_jsonl(brief_path / RELATIONSHIPS_FILE):
         if rel.get("type") == "calls":
             calls.append(CallRelationship.model_validate(rel))
 
-    # Find functions called by seed functions
+    # Find functions called by seed functions (only follow internal calls)
     for func_name in seed_functions:
         for call in calls:
             if call.from_func == func_name or call.from_func.endswith(f".{func_name}"):
-                # Found a callee
-                if call.file not in seen_files:
-                    seen_files.add(call.file)
+                # Check if the callee is an internal function
+                callee_name = call.to_func
+                callee_file = None
+
+                # Try exact match first
+                if callee_name in internal_funcs:
+                    callee_file = internal_funcs[callee_name]
+                else:
+                    # Try partial match (e.g., "create_task" matches "TaskManager.create_task")
+                    for internal_name, internal_file in internal_funcs.items():
+                        if internal_name.endswith(f".{callee_name}") or callee_name.endswith(f".{internal_name}"):
+                            callee_file = internal_file
+                            break
+
+                if callee_file and callee_file not in seen_files:
+                    seen_files.add(callee_file)
                     related.append({
-                        "path": call.file,
-                        "reason": f"contains {call.to_func} called by {func_name}"
+                        "path": callee_file,
+                        "reason": f"defines {callee_name} called by {func_name}"
                     })
 
     # Find functions that call seed functions
     for func_name in seed_functions:
         for call in calls:
             if call.to_func == func_name or call.to_func.endswith(f".{func_name}"):
-                # Found a caller
+                # Found a caller - add the file where the call is made
                 if call.file not in seen_files:
                     seen_files.add(call.file)
                     related.append({
                         "path": call.file,
-                        "reason": f"contains {call.from_func} which calls {func_name}"
+                        "reason": f"calls {func_name} from {call.from_func}"
                     })
 
     return related[:max_related]
 
 
-def get_file_description(brief_path: Path, file_path: str) -> str | None:
-    """Get the description for a file if it exists."""
+def get_file_description(
+    brief_path: Path,
+    file_path: str,
+    auto_generate: bool = False,
+    base_path: Optional[Path] = None
+) -> str | None:
+    """Get the description for a file.
+
+    Args:
+        brief_path: Path to .brief directory
+        file_path: Relative path to the file
+        auto_generate: If True, generate description on-demand if missing
+        base_path: Base path for the project (required if auto_generate is True)
+
+    Returns:
+        The description content, or None if not found and auto_generate is False.
+    """
     context_file = brief_path / CONTEXT_DIR / "files" / (file_path.replace("/", "__").replace("\\", "__") + ".md")
     if context_file.exists():
         return context_file.read_text()
+
+    # Lazy generation if requested
+    if auto_generate and base_path:
+        try:
+            from ..generation.generator import generate_and_save_file_description
+            return generate_and_save_file_description(brief_path, base_path, file_path)
+        except Exception:
+            pass
+
     return None
 
 
-def get_file_context(brief_path: Path, file_path: str) -> dict[str, Any]:
-    """Get full context for a specific file."""
+def get_file_context(
+    brief_path: Path,
+    file_path: str,
+    auto_generate_descriptions: bool = False,
+    base_path: Optional[Path] = None
+) -> dict[str, Any]:
+    """Get full context for a specific file.
+
+    Args:
+        brief_path: Path to .brief directory
+        file_path: Relative path to the file
+        auto_generate_descriptions: If True, generate descriptions on-demand if missing
+        base_path: Base path for the project (required if auto_generate_descriptions is True)
+
+    Returns:
+        Dict containing file context (record, classes, functions, imports, description, etc.)
+    """
     # Get manifest record
     file_record = None
     classes: list[dict[str, Any]] = []
@@ -219,8 +421,12 @@ def get_file_context(brief_path: Path, file_path: str) -> dict[str, Any]:
             elif rel["to_file"] == file_path:
                 imported_by.append(rel["from_file"])
 
-    # Get description
-    description = get_file_description(brief_path, file_path)
+    # Get description (with optional lazy generation)
+    description = get_file_description(
+        brief_path, file_path,
+        auto_generate=auto_generate_descriptions,
+        base_path=base_path
+    )
 
     return {
         "path": file_path,
@@ -230,6 +436,40 @@ def get_file_context(brief_path: Path, file_path: str) -> dict[str, Any]:
         "imports": imports,
         "imported_by": imported_by,
         "description": description
+    }
+
+
+def get_doc_context(
+    brief_path: Path,
+    doc_path: str,
+) -> dict[str, Any]:
+    """Get context for a documentation file.
+
+    Args:
+        brief_path: Path to .brief directory
+        doc_path: Relative path to the doc file
+
+    Returns:
+        Dict containing doc context (path, title, headings, first_paragraph, etc.)
+    """
+    # Find the doc record in manifest
+    for record in read_jsonl(brief_path / MANIFEST_FILE):
+        if record["type"] == "doc" and record["path"] == doc_path:
+            return {
+                "path": doc_path,
+                "record_type": "doc",
+                "title": record.get("title"),
+                "headings": record.get("headings", []),
+                "first_paragraph": record.get("first_paragraph"),
+            }
+
+    # Not found - return minimal context
+    return {
+        "path": doc_path,
+        "record_type": "doc",
+        "title": Path(doc_path).stem,
+        "headings": [],
+        "first_paragraph": None,
     }
 
 
@@ -375,27 +615,47 @@ def get_relevant_paths(
 def build_context_for_file(
     brief_path: Path,
     file_path: str,
-    base_path: Optional[Path] = None
+    base_path: Optional[Path] = None,
+    auto_generate_descriptions: bool = False
 ) -> ContextPackage:
-    """Build a context package for working on a specific file."""
+    """Build a context package for working on a specific file.
+
+    Args:
+        brief_path: Path to .brief directory
+        file_path: Relative path to the file
+        base_path: Base path for the project (defaults to brief_path.parent)
+        auto_generate_descriptions: Whether to generate descriptions on-demand if missing
+    """
     package = ContextPackage(query=f"file: {file_path}")
 
     if base_path is None:
         base_path = brief_path.parent
 
     # Get primary file context
-    primary = get_file_context(brief_path, file_path)
+    primary = get_file_context(
+        brief_path, file_path,
+        auto_generate_descriptions=auto_generate_descriptions,
+        base_path=base_path
+    )
     package.primary_files.append(primary)
 
     # Add imported files as related
     for imp_path in primary["imports"]:
-        imp_context = get_file_context(brief_path, imp_path)
+        imp_context = get_file_context(
+            brief_path, imp_path,
+            auto_generate_descriptions=auto_generate_descriptions,
+            base_path=base_path
+        )
         imp_context["reason"] = "imported by primary file"
         package.related_files.append(imp_context)
 
     # Add files that import this as related
     for imp_path in primary["imported_by"][:5]:  # Limit
-        imp_context = get_file_context(brief_path, imp_path)
+        imp_context = get_file_context(
+            brief_path, imp_path,
+            auto_generate_descriptions=auto_generate_descriptions,
+            base_path=base_path
+        )
         imp_context["reason"] = "imports primary file"
         package.related_files.append(imp_context)
 
@@ -440,7 +700,8 @@ def build_context_for_query(
     base_path: Optional[Path] = None,
     include_contracts: bool = True,
     include_paths: bool = True,
-    include_patterns: bool = True
+    include_patterns: bool = True,
+    auto_generate_descriptions: bool = False
 ) -> ContextPackage:
     """Build a context package for a task description.
 
@@ -452,6 +713,7 @@ def build_context_for_query(
         include_contracts: Whether to include relevant contracts
         include_paths: Whether to include relevant execution paths
         include_patterns: Whether to include relevant memory patterns
+        auto_generate_descriptions: Whether to generate descriptions on-demand if missing
 
     Returns:
         ContextPackage with files, patterns, contracts, and execution paths
@@ -468,31 +730,51 @@ def build_context_for_query(
         # Use semantic search to find relevant files
         results = search_func(query)
         for result in results[:5]:  # Top 5
-            context = get_file_context(brief_path, result["path"])
+            result_path = result["path"]
+            # Check if this is a doc file or code file
+            if result_path.endswith(".md"):
+                context = get_doc_context(brief_path, result_path)
+            else:
+                context = get_file_context(
+                    brief_path, result_path,
+                    auto_generate_descriptions=auto_generate_descriptions,
+                    base_path=base_path
+                )
             context["relevance"] = result.get("score", 0)
             package.primary_files.append(context)
-            all_file_paths.append(result["path"])
+            all_file_paths.append(result_path)
 
-        # Add related files
+        # Add related files (only for code files, not docs)
         for primary in package.primary_files[:3]:
+            if primary.get("record_type") == "doc":
+                continue  # Docs don't have imports
             for imp_path in primary.get("imports", [])[:2]:
-                imp_context = get_file_context(brief_path, imp_path)
+                imp_context = get_file_context(
+                    brief_path, imp_path,
+                    auto_generate_descriptions=auto_generate_descriptions,
+                    base_path=base_path
+                )
                 imp_context["reason"] = f"imported by {primary['path']}"
                 if imp_context not in package.related_files:
                     package.related_files.append(imp_context)
                     all_file_paths.append(imp_path)
     else:
-        # Improved keyword search across manifest (classes, functions, docstrings)
+        # Improved keyword search across manifest (classes, functions, docstrings, docs)
         scored_results = search_manifest(brief_path, query, max_results=20)
 
         # Group by file and collect matched functions
         file_scores: dict[str, int] = {}
         file_functions: dict[str, list[str]] = {}
+        doc_scores: dict[str, int] = {}  # Separate tracking for doc files
 
         for score, record in scored_results:
             if record["type"] == "file":
                 file_path = record["path"]
                 file_scores[file_path] = file_scores.get(file_path, 0) + score
+            elif record["type"] == "doc":
+                # Documentation files tracked separately
+                doc_path = record["path"]
+                doc_scores[doc_path] = doc_scores.get(doc_path, 0) + score
             elif record["type"] in ("class", "function"):
                 file_path = record["file"]
                 file_scores[file_path] = file_scores.get(file_path, 0) + score
@@ -505,17 +787,29 @@ def build_context_for_query(
                     file_functions[file_path] = []
                 file_functions[file_path].append(func_name)
 
-        # Sort files by score and take top ones
+        # Sort code files by score and take top ones
         sorted_files = sorted(file_scores.items(), key=lambda x: -x[1])
 
         seed_functions: list[str] = []
         for file_path, score in sorted_files[:5]:
-            context = get_file_context(brief_path, file_path)
+            context = get_file_context(
+                brief_path, file_path,
+                auto_generate_descriptions=auto_generate_descriptions,
+                base_path=base_path
+            )
             context["relevance"] = score
             package.primary_files.append(context)
             all_file_paths.append(file_path)
             # Collect functions for call graph expansion
             seed_functions.extend(file_functions.get(file_path, []))
+
+        # Add matching documentation files
+        sorted_docs = sorted(doc_scores.items(), key=lambda x: -x[1])
+        for doc_path, score in sorted_docs[:3]:  # Top 3 docs
+            context = get_doc_context(brief_path, doc_path)
+            context["relevance"] = score
+            package.primary_files.append(context)
+            all_file_paths.append(doc_path)
 
         # Expand using call graph
         if seed_functions:
@@ -524,7 +818,11 @@ def build_context_for_query(
             )
             for rel in call_related:
                 if rel["path"] not in all_file_paths:
-                    context = get_file_context(brief_path, rel["path"])
+                    context = get_file_context(
+                        brief_path, rel["path"],
+                        auto_generate_descriptions=auto_generate_descriptions,
+                        base_path=base_path
+                    )
                     context["reason"] = rel["reason"]
                     package.related_files.append(context)
                     all_file_paths.append(rel["path"])

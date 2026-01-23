@@ -12,9 +12,67 @@ RelationshipRecord = Union[ImportRelationship, CallRelationship]
 
 def resolve_import_to_file(
     import_module: str,
-    base_path: Path
+    base_path: Path,
+    importing_file: str | None = None,
+    level: int = 0
 ) -> str | None:
-    """Try to resolve an import to a local file path."""
+    """Try to resolve an import to a local file path.
+
+    Args:
+        import_module: The module being imported (e.g., "models" for "from ..models import X")
+        base_path: The base path of the project
+        importing_file: The file that contains the import (needed for relative imports)
+        level: The relative import level (0 for absolute, 1 for ".", 2 for "..", etc.)
+
+    Returns:
+        The relative path to the imported file, or None if it's an external import.
+    """
+    # Handle relative imports
+    if level > 0 and importing_file:
+        # Get the directory of the importing file
+        importing_path = Path(importing_file)
+        # Go up 'level' directories (level=1 means same package, level=2 means parent, etc.)
+        # For a file like src/brief/commands/analyze.py with level=2 and module="models":
+        # - importing_path.parent = src/brief/commands
+        # - Go up 'level' times: level=2 means go up 2-1=1 level from the file's package
+        # Actually, level represents how many dots there are:
+        # - "from . import X" -> level=1, stay in same package
+        # - "from .. import X" -> level=2, go up one package
+        # - "from ...import X" -> level=3, go up two packages
+
+        # Start from the directory containing the importing file
+        package_dir = importing_path.parent
+
+        # Go up (level - 1) additional directories
+        # level=1 (.): same directory as current file's package
+        # level=2 (..): parent of current file's package
+        for _ in range(level - 1):
+            package_dir = package_dir.parent
+
+        # Now resolve the module relative to this directory
+        if import_module:
+            parts = import_module.split('.')
+            resolved_path = package_dir / '/'.join(parts)
+        else:
+            # "from . import X" where import_module is empty
+            resolved_path = package_dir
+
+        # Try as package (directory with __init__.py)
+        package_init = base_path / resolved_path / '__init__.py'
+        if package_init.exists():
+            return str(package_init.relative_to(base_path))
+
+        # Try as module (file.py)
+        module_file = base_path / (str(resolved_path) + '.py')
+        if module_file.exists():
+            return str(module_file.relative_to(base_path))
+
+        return None  # Couldn't resolve
+
+    # Handle absolute imports
+    if not import_module:
+        return None
+
     # Convert module.name to path
     parts = import_module.split('.')
 
@@ -58,8 +116,12 @@ class RelationshipExtractor:
         from_file = str(file_path.relative_to(self.base_path))
 
         # Extract import relationships
-        for module, names in parser.get_imports():
-            to_file = resolve_import_to_file(module, self.base_path)
+        for module, level, names in parser.get_imports():
+            to_file = resolve_import_to_file(
+                module, self.base_path,
+                importing_file=from_file,
+                level=level
+            )
             if to_file:  # Only track local imports
                 relationships.append(ImportRelationship(
                     from_file=from_file,

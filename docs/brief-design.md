@@ -293,6 +293,12 @@ The test: Given Brief's context for a task, does the agent produce correct code?
 
 If not, the context is insufficient. Improve it.
 
+### 5. Bottom Line Up Front (BLUF)
+
+State what something is and broader overviews before providing full contents or detailed information. This focuses the agent's 'thinking' when interpereting the detailed information to reduce flawed understanding or identification of importance. 
+
+example: Don't provide a filename and tell the agent to read it. Do provide the filename along with a description of the file before the agent reads it. 
+
 ---
 
 ## Usage
