@@ -14,9 +14,11 @@ class ManifestFileRecord(BaseModel):
     type: Literal["file"] = "file"
     path: str
     module: str
+    extension: Optional[str] = None  # File extension (e.g., ".py", ".html")
     context_ref: Optional[str] = None
     analyzed_at: Optional[datetime] = None
     file_hash: Optional[str] = None
+    parsed: bool = True  # False for files we just discovered but didn't parse
 
 
 class ParamInfo(BaseModel):
@@ -58,8 +60,22 @@ class ManifestFunctionRecord(BaseModel):
     description: Optional[str] = None
 
 
+class ManifestDocRecord(BaseModel):
+    """Record for a documentation file in the manifest."""
+
+    type: Literal["doc"] = "doc"
+    path: str
+    extension: str = ".md"
+    title: str  # First h1 heading or filename
+    headings: list[str] = Field(default_factory=list)  # All h1-h4 headings
+    first_paragraph: Optional[str] = None  # First paragraph for summary
+    context_ref: Optional[str] = None  # Link to description file
+    analyzed_at: Optional[datetime] = None
+    file_hash: Optional[str] = None
+
+
 # Union type for manifest records
-ManifestRecord = Union[ManifestFileRecord, ManifestClassRecord, ManifestFunctionRecord]
+ManifestRecord = Union[ManifestFileRecord, ManifestClassRecord, ManifestFunctionRecord, ManifestDocRecord]
 
 
 # === Relationship Records ===
@@ -170,12 +186,15 @@ class BriefConfig(BaseModel):
     version: str = "0.1.0"
     default_model: str = "gpt-5-mini"
     auto_analyze: bool = False
+    use_gitignore: bool = True  # Use .gitignore patterns in addition to exclude_patterns
     exclude_patterns: list[str] = Field(default_factory=lambda: [
+        ".*",              # All dot-prefixed folders (.git, .venv, .claude, etc.)
         "__pycache__",
-        "*.pyc",
-        ".git",
-        ".venv",
         "node_modules",
-        "baml_client",
+        "*.pyc",
+        "*.pyo",
+        "*.egg-info",
+        "dist",
+        "build",
         ".brief",
     ])

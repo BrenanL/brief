@@ -1,25 +1,80 @@
-"""Manifest building from parsed Python files."""
+"""Manifest building from analyzed files - Python, docs, and other tracked files."""
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Any
+from datetime import datetime
 import fnmatch
 from .parser import PythonFileParser, compute_file_hash
-from ..models import ManifestFileRecord, ManifestClassRecord, ManifestFunctionRecord
+from .markdown import MarkdownParser, is_dated_filename
+from ..models import (
+    ManifestFileRecord, ManifestClassRecord, ManifestFunctionRecord,
+    ManifestDocRecord
+)
 from ..storage import read_jsonl, write_jsonl
-from ..config import get_brief_path, MANIFEST_FILE
+from ..config import (
+    get_brief_path, MANIFEST_FILE,
+    DEFAULT_EXCLUDE_PATTERNS, DEFAULT_DOC_INCLUDE, DEFAULT_DOC_EXCLUDE,
+    PARSED_EXTENSIONS, TRACKED_EXTENSIONS
+)
 
 # Type alias for manifest records
-ManifestRecord = ManifestFileRecord | ManifestClassRecord | ManifestFunctionRecord
+ManifestRecord = ManifestFileRecord | ManifestClassRecord | ManifestFunctionRecord | ManifestDocRecord
 
 
 def should_exclude(path: Path, patterns: list[str]) -> bool:
     """Check if path matches any exclude pattern."""
     path_str = str(path)
     for pattern in patterns:
+        # Special handling for dot-prefixed directory pattern
+        if pattern == ".*":
+            for part in path.parts:
+                if part.startswith('.') and part != '.':
+                    return True
+            continue
+
+        # Check full path
         if fnmatch.fnmatch(path_str, f"*{pattern}*"):
+            return True
+        # Check just filename
+        if fnmatch.fnmatch(path.name, pattern):
+            return True
+    return False
+
+
+def matches_pattern(path: Path, patterns: list[str], base_path: Path) -> bool:
+    """Check if path matches any of the glob patterns."""
+    rel_path = str(path.relative_to(base_path))
+    for pattern in patterns:
+        if fnmatch.fnmatch(rel_path, pattern):
             return True
         if fnmatch.fnmatch(path.name, pattern):
             return True
     return False
+
+
+def should_include_doc(
+    path: Path,
+    base_path: Path,
+    include_patterns: list[str] | None = None,
+    exclude_patterns: list[str] | None = None
+) -> bool:
+    """Determine if a markdown file should be included as documentation.
+
+    Uses sensible defaults - includes standard doc locations, excludes
+    archive/status/dated files.
+    """
+    include = include_patterns if include_patterns is not None else DEFAULT_DOC_INCLUDE
+    exclude = exclude_patterns if exclude_patterns is not None else DEFAULT_DOC_EXCLUDE
+
+    # Check exclude patterns first
+    if matches_pattern(path, exclude, base_path):
+        return False
+
+    # Check if filename has date pattern
+    if is_dated_filename(path.name):
+        return False
+
+    # Check include patterns
+    return matches_pattern(path, include, base_path)
 
 
 def find_python_files(
@@ -30,6 +85,64 @@ def find_python_files(
     for path in directory.rglob("*.py"):
         if not should_exclude(path, exclude_patterns):
             yield path
+
+
+def find_doc_files(
+    directory: Path,
+    exclude_patterns: list[str],
+    doc_include: list[str] | None = None,
+    doc_exclude: list[str] | None = None
+) -> Generator[Path, None, None]:
+    """Find all documentation files in directory."""
+    for path in directory.rglob("*.md"):
+        if should_exclude(path, exclude_patterns):
+            continue
+        if should_include_doc(path, directory, doc_include, doc_exclude):
+            yield path
+
+
+def find_other_files(
+    directory: Path,
+    exclude_patterns: list[str]
+) -> Generator[Path, None, None]:
+    """Find other tracked files (not Python or docs)."""
+    for path in directory.rglob("*"):
+        if path.is_dir():
+            continue
+        if should_exclude(path, exclude_patterns):
+            continue
+
+        ext = path.suffix.lower()
+        # Skip Python and markdown (handled separately)
+        if ext in [".py", ".md"]:
+            continue
+        # Only yield if extension is in our tracked list
+        if ext in TRACKED_EXTENSIONS:
+            yield path
+
+
+def find_all_files(
+    directory: Path,
+    exclude_patterns: list[str]
+) -> Generator[tuple[Path, str], None, None]:
+    """Find all project files, categorized by type.
+
+    Yields: (path, category) where category is 'python', 'doc', or 'other'
+    """
+    for path in directory.rglob("*"):
+        if path.is_dir():
+            continue
+        if should_exclude(path, exclude_patterns):
+            continue
+
+        ext = path.suffix.lower()
+        if ext == ".py":
+            yield (path, "python")
+        elif ext == ".md":
+            if should_include_doc(path, directory):
+                yield (path, "doc")
+        elif ext in TRACKED_EXTENSIONS:
+            yield (path, "other")
 
 
 def get_changed_files(
@@ -48,14 +161,15 @@ def get_changed_files(
     # Load existing manifest
     existing: dict[str, str | None] = {}
     for record in read_jsonl(brief_path / MANIFEST_FILE):
-        if record.get("type") == "file":
+        if record.get("type") in ("file", "doc"):
             existing[record["path"]] = record.get("file_hash")
 
     new_files: list[Path] = []
     changed_files: list[Path] = []
     current_paths: set[str] = set()
 
-    for file_path in find_python_files(base_path, exclude_patterns):
+    # Check all file types
+    for file_path, _ in find_all_files(base_path, exclude_patterns):
         rel_path = str(file_path.relative_to(base_path))
         current_paths.add(rel_path)
 
@@ -73,36 +187,91 @@ def get_changed_files(
 
 
 class ManifestBuilder:
-    """Build manifest from Python files."""
+    """Build manifest from Python files, docs, and other tracked files."""
 
-    def __init__(self, base_path: Path, exclude_patterns: list[str] | None = None):
+    def __init__(
+        self,
+        base_path: Path,
+        exclude_patterns: list[str] | None = None,
+        doc_include: list[str] | None = None,
+        doc_exclude: list[str] | None = None
+    ):
         self.base_path = base_path
-        self.exclude_patterns = exclude_patterns or [
-            "__pycache__", "*.pyc", ".git", ".venv",
-            "node_modules", "baml_client"
-        ]
+        self.exclude_patterns = exclude_patterns or DEFAULT_EXCLUDE_PATTERNS
+        self.doc_include = doc_include  # None means use defaults
+        self.doc_exclude = doc_exclude  # None means use defaults
         self.records: list[ManifestRecord] = []
 
-    def analyze_file(self, file_path: Path) -> list[ManifestRecord]:
-        """Analyze a single file and return its records."""
+    def analyze_python_file(self, file_path: Path) -> list[ManifestRecord]:
+        """Analyze a single Python file and return its records."""
         parser = PythonFileParser(file_path, self.base_path)
         if not parser.parse():
             return []
 
         records: list[ManifestRecord] = []
-        records.append(parser.get_file_record())
+        file_record = parser.get_file_record()
+        # Add extension field
+        file_record.extension = file_path.suffix.lower()
+        records.append(file_record)
         records.extend(parser.get_classes())
         records.extend(parser.get_functions())
         return records
 
+    def analyze_doc_file(self, file_path: Path) -> ManifestDocRecord | None:
+        """Analyze a markdown file and return its record."""
+        parser = MarkdownParser(file_path, self.base_path)
+        if not parser.parse():
+            return None
+
+        md_record = parser.get_record()
+
+        return ManifestDocRecord(
+            path=md_record.path,
+            extension=".md",
+            title=md_record.title or file_path.stem,
+            headings=md_record.headings,
+            first_paragraph=md_record.first_paragraph,
+            file_hash=md_record.file_hash,
+            analyzed_at=datetime.now()
+        )
+
+    def analyze_other_file(self, file_path: Path) -> ManifestFileRecord:
+        """Create a basic record for an unparsed file."""
+        rel_path = str(file_path.relative_to(self.base_path))
+
+        return ManifestFileRecord(
+            type="file",
+            path=rel_path,
+            module=rel_path.replace("/", ".").replace("\\", "."),
+            extension=file_path.suffix.lower(),
+            file_hash=compute_file_hash(file_path),
+            analyzed_at=datetime.now(),
+            parsed=False  # Mark as not fully parsed
+        )
+
     def analyze_directory(self, directory: Path | None = None) -> list[ManifestRecord]:
-        """Analyze all Python files in directory."""
+        """Analyze all files in directory - Python, docs, and other."""
         if directory is None:
             directory = self.base_path
 
         self.records = []
+
+        # Analyze Python files (full parsing)
         for file_path in find_python_files(directory, self.exclude_patterns):
-            self.records.extend(self.analyze_file(file_path))
+            self.records.extend(self.analyze_python_file(file_path))
+
+        # Analyze documentation files (heading extraction)
+        for file_path in find_doc_files(
+            directory, self.exclude_patterns,
+            self.doc_include, self.doc_exclude
+        ):
+            doc_record = self.analyze_doc_file(file_path)
+            if doc_record:
+                self.records.append(doc_record)
+
+        # Track other files (basic record only)
+        for file_path in find_other_files(directory, self.exclude_patterns):
+            self.records.append(self.analyze_other_file(file_path))
 
         return self.records
 
@@ -115,14 +284,25 @@ class ManifestBuilder:
 
     def get_stats(self) -> dict[str, int]:
         """Get statistics about analyzed code."""
-        files = [r for r in self.records if r.type == "file"]
-        classes = [r for r in self.records if r.type == "class"]
-        functions = [r for r in self.records if r.type == "function"]
+        files = [r for r in self.records if isinstance(r, ManifestFileRecord)]
+        # Python files: extension is .py OR parsed is True (default) OR no extension set (old records)
+        python_files = [
+            f for f in files
+            if (f.extension == ".py") or (f.extension is None) or (f.parsed is True and f.extension in (None, ".py"))
+        ]
+        other_files = [f for f in files if f.parsed is False]
+        docs = [r for r in self.records if isinstance(r, ManifestDocRecord)]
+        classes = [r for r in self.records if isinstance(r, ManifestClassRecord)]
+        functions = [r for r in self.records if isinstance(r, ManifestFunctionRecord)]
 
         return {
-            "files": len(files),
+            "python_files": len(python_files),
+            "doc_files": len(docs),
+            "other_files": len(other_files),
             "classes": len(classes),
             "functions": len(functions),
             "methods": len([f for f in functions if isinstance(f, ManifestFunctionRecord) and f.class_name]),
-            "module_functions": len([f for f in functions if isinstance(f, ManifestFunctionRecord) and not f.class_name])
+            "module_functions": len([f for f in functions if isinstance(f, ManifestFunctionRecord) and not f.class_name]),
+            # Legacy field for backwards compatibility
+            "files": len(python_files),
         }

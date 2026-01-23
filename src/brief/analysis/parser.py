@@ -155,19 +155,28 @@ class PythonFileParser:
             docstring=ast.get_docstring(node)
         )
 
-    def get_imports(self) -> Generator[tuple[str, list[str]], None, None]:
-        """Extract imports as (module, [names]) tuples."""
+    def get_imports(self) -> Generator[tuple[str, int, list[str]], None, None]:
+        """Extract imports as (module, level, [names]) tuples.
+
+        Args:
+            Yields tuples of (module_name, relative_level, imported_names)
+            - module_name: the module being imported from (e.g., "models" for "from ..models import X")
+            - relative_level: 0 for absolute imports, 1 for "from . import", 2 for "from .. import", etc.
+            - imported_names: list of names being imported
+        """
         if not self.tree:
             return
 
         for node in self.tree.body:
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    yield (alias.name, [alias.asname or alias.name])
+                    yield (alias.name, 0, [alias.asname or alias.name])
             elif isinstance(node, ast.ImportFrom):
-                if node.module:
-                    names = [alias.name for alias in node.names]
-                    yield (node.module, names)
+                names = [alias.name for alias in node.names]
+                # node.module can be None for "from . import X"
+                module = node.module or ""
+                level = node.level or 0
+                yield (module, level, names)
 
     def get_calls(self) -> Generator[CallRelationship, None, None]:
         """Extract function calls within function bodies.

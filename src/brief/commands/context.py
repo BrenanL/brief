@@ -25,6 +25,7 @@ def context_get(
     patterns: bool = typer.Option(True, "--patterns/--no-patterns", help="Include memory patterns"),
     contracts: bool = typer.Option(True, "--contracts/--no-contracts", help="Include contracts"),
     paths: bool = typer.Option(True, "--paths/--no-paths", help="Include execution paths"),
+    auto_generate: bool = typer.Option(False, "--auto-generate", "-g", help="Generate descriptions on-demand if missing"),
 ) -> None:
     """Get relevant context for a task or file.
 
@@ -40,6 +41,9 @@ def context_get(
 
     Or provide a query directly:
         brief context get "refactoring the table command"
+
+    Use --auto-generate to generate descriptions on-demand for files that don't have them:
+        brief context get "task management" --auto-generate
     """
     brief_path = get_brief_path(base)
 
@@ -70,7 +74,10 @@ def context_get(
 
     if file_mode or query.endswith(".py"):
         # File mode
-        package = build_context_for_file(brief_path, query, base_path=base)
+        package = build_context_for_file(
+            brief_path, query, base_path=base,
+            auto_generate_descriptions=auto_generate
+        )
     else:
         # Query mode with search
         def search_func(q: str):
@@ -83,7 +90,8 @@ def context_get(
             base_path=base,
             include_contracts=contracts,
             include_paths=paths,
-            include_patterns=patterns
+            include_patterns=patterns,
+            auto_generate_descriptions=auto_generate
         )
 
     markdown = package.to_markdown()

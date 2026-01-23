@@ -2,7 +2,7 @@
 import typer
 from pathlib import Path
 from typing import Optional
-from ..config import get_brief_path
+from ..config import get_brief_path, load_exclude_patterns
 from ..analysis.manifest import ManifestBuilder, get_changed_files
 from ..analysis.relationships import RelationshipExtractor
 from ..models import ImportRelationship, CallRelationship
@@ -57,9 +57,9 @@ def analyze_directory(
         typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
 
-    # Load config for exclude patterns
+    # Load config and exclude patterns (including gitignore if enabled)
     config = read_json(brief_path / "config.json")
-    exclude_patterns = config.get("exclude_patterns", [])
+    exclude_patterns = load_exclude_patterns(base, config)
 
     # Build manifest
     typer.echo(f"Analyzing {directory}...")
@@ -78,7 +78,9 @@ def analyze_directory(
     call_count = sum(1 for r in extractor.relationships if isinstance(r, CallRelationship))
 
     typer.echo(f"\nAnalysis complete:")
-    typer.echo(f"  Files: {stats['files']}")
+    typer.echo(f"  Python files: {stats['python_files']}")
+    typer.echo(f"  Doc files: {stats['doc_files']}")
+    typer.echo(f"  Other files: {stats['other_files']}")
     typer.echo(f"  Classes: {stats['classes']}")
     typer.echo(f"  Functions: {stats['module_functions']} module-level, {stats['methods']} methods")
     typer.echo(f"  Relationships: {import_count} imports, {call_count} calls")

@@ -2,7 +2,84 @@
 
 This is the **Brief** codebase - a context infrastructure tool for AI coding agents.
 
-## READ FIRST: Development Notes
+---
+
+## HOW TO WORK IN THIS CODEBASE
+
+**This project uses Brief for context management. Follow this workflow.**
+
+### Session Start Checklist
+
+Every time you start working (including after context compaction):
+
+```bash
+brief status              # See project state
+brief task list           # See what needs doing
+```
+
+If resuming previous work: `brief resume`
+
+### The Core Rule
+
+**When you need to understand code, use Brief - not Read/Grep/Glob.**
+
+```bash
+brief context get "what you need to understand"
+```
+
+This gives you: relevant files, descriptions, function signatures, related files, contracts, and execution paths - all in one call. It's better than manual exploration.
+
+### Task Workflow
+
+**Step 1: Pick up a task**
+```bash
+brief task list                    # See available tasks
+brief task start <task-id>         # Mark it active
+brief context get "<task topic>"   # Get relevant context
+```
+
+**Step 2: Plan with TodoWrite**
+
+Use your TodoWrite tool to break the task into steps. TodoWrite is for session-scoped step tracking. Brief tasks are for persistent work items.
+
+Example:
+- Brief task: "Implement caching for API calls"
+- TodoWrite steps: "1. Find current API code, 2. Add cache layer, 3. Update tests, 4. Run tests"
+
+**Step 3: Do the work**
+
+As you work, use `brief context get` whenever you need to understand something new. Don't fall back to Read/Grep/Glob for exploration.
+
+**Step 4: Complete the task**
+```bash
+brief task done <task-id>          # Mark complete
+pytest tests/ -v -s                # Verify tests pass
+```
+
+### Quick Reference
+
+| When... | Do this |
+|---------|---------|
+| Need to understand code | `brief context get "query"` |
+| Starting a work session | `brief status` then `brief task list` |
+| Starting a task | `brief task start <id>` |
+| Finishing a task | `brief task done <id>` |
+| User says "resume/continue" | `brief resume` |
+| Error or need to view brief's capabilities | `brief --help` |
+
+For detailed examples and workflow guidance, see **[docs/brief-workflow.md](docs/brief-workflow.md)**.
+
+### What NOT To Do
+
+- ❌ Don't use Read/Grep/Glob to explore code structure (use `brief context get`)
+- ❌ Don't track tasks only in TodoWrite (use Brief tasks for persistence)
+- ❌ Don't forget to mark tasks done with `brief task done`
+- ✅ DO use Read for specific files you already know you need
+- ✅ DO use TodoWrite for planning steps within a task
+
+---
+
+## Development Notes
 
 **Always read `docs/DEV_NOTES.md` before starting work.** It contains:
 - Current known issues and their status
@@ -19,22 +96,16 @@ This is the **Brief** codebase - a context infrastructure tool for AI coding age
 
 ## Environment Setup
 
-Always activate the virtual environment before running commands:
-
 ```bash
-source .venv/bin/activate
+source .venv/bin/activate          # Always activate venv first
 ```
 
 This project uses **uv** for package management. Always use `uv pip` instead of `pip`:
 
 ```bash
-# Install dependencies
-uv pip install -e .
-
-# Install with optional dependencies
-uv pip install -e ".[dev]"
-uv pip install -e ".[llm]"
-uv pip install -e ".[all]"
+uv pip install -e .                # Install dependencies
+uv pip install -e ".[dev]"         # With dev dependencies
+uv pip install -e ".[all]"         # All optional dependencies
 
 # Install a new package
 uv pip install <package-name>
@@ -68,31 +139,6 @@ brief/
 └── baml_src/            # BAML client definitions (for LLM)
 ```
 
-## Key Files
-
-- `src/brief/cli.py` - Main CLI entry point, registers all commands
-- `src/brief/config.py` - `BRIEF_DIR`, `get_brief_path()`, path constants
-- `src/brief/models.py` - All Pydantic models (`BriefConfig`, `TaskRecord`, etc.)
-- `src/brief/retrieval/context.py` - `build_context_for_query()`, `ContextPackage`
-- `src/brief/commands/*.py` - Individual command implementations
-
-## Development Commands
-
-```bash
-# Run the CLI
-brief --help
-
-# Test specific functionality
-brief init
-brief analyze dir src/brief/
-brief overview
-brief context get "task management"
-
-# Run specific test file
-pytest tests/test_tasks.py -v -s
-pytest tests/test_retrieval.py -v -s
-```
-
 ## Code Style
 
 - Use type hints for all function signatures
@@ -108,95 +154,3 @@ pytest tests/test_retrieval.py -v -s
 3. **Models**: All data structures are Pydantic models in `models.py`
 4. **Commands**: Each command module has an `app = typer.Typer()` that gets registered in `cli.py`
 5. **Error handling**: Use `typer.echo("Error: ...", err=True)` and `raise typer.Exit(1)`
-
----
-
-## Using Brief in This Project
-
-This project uses **Brief** for context management.
-
-### Resuming Previous Work
-
-If the user asks you to **resume**, **continue**, or **pick up where you left off**:
-
-```bash
-brief resume
-```
-
-This shows the active task with its context. Continue working on that task.
-
-If you're unsure whether there's relevant existing work:
-```bash
-brief task list
-```
-
-### How to Get Information
-
-**Do NOT search the codebase yourself.** Instead, use:
-
-```bash
-brief context get "what you need to understand"
-```
-
-This replaces grep, glob, find, and exploratory file reading. Brief knows the codebase structure and will give you exactly what's relevant - including related files, contracts you must follow, and execution paths.
-
-**Examples:**
-- Need to understand a feature? → `brief context get "how does context retrieval work"`
-- Need to modify something? → `brief context get "modifying the search system"`
-- Confused about relationships? → `brief context get "what calls build_context_for_query"`
-- Starting a task? → `brief context get "adding timing to context retrieval"`
-
-Use this command **repeatedly** as you work - not just once at the start.
-
-### Workflow
-
-#### Starting Work
-
-When the user gives you a specific task:
-
-```bash
-# 1. Get context for what you're doing
-brief context get "what you're working on"
-
-# 2. For larger work, create a task to track it
-brief task create "title" --desc "details" --tags "tags"
-brief task start <task-id>
-```
-
-Task creation is optional for quick fixes, but recommended for anything that might be interrupted or handed off.
-
-#### During Work
-
-```bash
-# Get more context as needed (use this liberally)
-brief context get "the specific thing you need to understand"
-```
-
-#### Completing Work
-
-```bash
-# Mark the task done (if you created one)
-brief task done <task-id>
-
-# Run tests
-pytest tests/ -v -s
-```
-
-### Key Commands
-
-| Command | Use When |
-|---------|----------|
-| `brief context get "query"` | You need to understand something |
-| `brief resume` | User asks to continue previous work |
-| `brief task list` | See all tasks |
-| `brief task create "title"` | Starting trackable work |
-| `brief task done <id>` | Finishing tracked work |
-| `brief contracts show` | You need to see all codebase rules |
-| `brief trace show <name>` | You want to see an execution flow |
-
-### Important
-
-1. **Always use `brief context get` before implementing** - it shows you the right files, patterns, and contracts
-2. **Use `brief resume` when asked to continue previous work** - not for new tasks
-3. **Follow the contracts** - they're rules that keep the codebase consistent
-4. **Don't search manually** - trust Brief to give you relevant context

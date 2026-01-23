@@ -68,21 +68,21 @@ This is the hardest to capture because it's often not in the code.
 ## The Process I'd Follow
 
 ```
-Phase 1: Map Entry Points
-├── What can users do? (CLI commands, Acme methods, API endpoints)
-├── For each entry point, what's the signature?
-└── What's the expected outcome?
-
-Phase 2: Trace Execution Paths
-├── For each major capability, follow the code
-├── Document: entry → dispatch → managers → storage → response
-└── Capture decision points and branches
-
-Phase 3: Inventory Components
+Phase 1: Inventory Components
 ├── For each file: what classes/functions exist?
 ├── For each class: what's its responsibility?
 ├── For each function: what does it do, what does it need, what does it return?
 └── Build the dependency graph
+
+Phase 2: Map Entry Points
+├── What can users do? (CLI commands, Acme methods, API endpoints)
+├── For each entry point, what's the signature?
+└── What's the expected outcome?
+
+Phase 3: Trace Execution Paths
+├── For each major capability, follow the code
+├── Document: entry → dispatch → managers → storage → response
+└── Capture decision points and branches
 
 Phase 4: Extract Contracts
 ├── What patterns repeat?

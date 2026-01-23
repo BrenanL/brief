@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/dev/brief/scripts/brief-hook-warn.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '\n════════════════════════════════════════════════════\n  BRIEF PROJECT: Use `brief context get` for code\n  exploration instead of Read/Grep/Glob. Returns\n  descriptions, signatures, and related files.\n════════════════════════════════════════════════════\n'"
+          }
+        ]
+      }
+    ]
+  }
+}

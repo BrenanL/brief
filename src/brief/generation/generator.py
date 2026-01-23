@@ -242,6 +242,82 @@ def _generate_placeholder_module_description(
 # Formatting functions
 # ============================================================
 
+def generate_and_save_file_description(
+    brief_path: Path,
+    base_path: Path,
+    file_path: str
+) -> str | None:
+    """Generate description for a file and save it.
+
+    This is a convenience function for lazy generation during context retrieval.
+
+    Args:
+        brief_path: Path to .brief directory
+        base_path: Base path for the project
+        file_path: Relative path to the file
+
+    Returns:
+        The generated description as markdown, or None if generation failed.
+    """
+    from ..storage import read_jsonl, write_jsonl
+    from ..config import MANIFEST_FILE, CONTEXT_DIR, RELATIONSHIPS_FILE
+
+    # Find file record in manifest
+    file_record = None
+    class_names: list[str] = []
+    function_names: list[str] = []
+
+    for record in read_jsonl(brief_path / MANIFEST_FILE):
+        if record["type"] == "file" and record["path"] == file_path:
+            file_record = ManifestFileRecord.model_validate(record)
+        elif record.get("file") == file_path:
+            if record["type"] == "class":
+                class_names.append(record["name"])
+            elif record["type"] == "function" and not record.get("class_name"):
+                function_names.append(record["name"])
+
+    if not file_record:
+        return None
+
+    # Get imports from relationships
+    imports: list[str] = []
+    for rel in read_jsonl(brief_path / RELATIONSHIPS_FILE):
+        if rel.get("type") == "imports" and rel["from_file"] == file_path:
+            imports.extend(rel.get("imports", []))
+
+    try:
+        desc = describe_file(file_record, base_path, class_names, function_names, imports)
+        markdown = format_file_description(desc)
+
+        # Write to context file
+        context_file = brief_path / CONTEXT_DIR / "files" / (file_path.replace("/", "__").replace("\\", "__") + ".md")
+        context_file.parent.mkdir(parents=True, exist_ok=True)
+        header = f"# {file_path}\n\n"
+        full_content = header + markdown
+        context_file.write_text(full_content)
+
+        # Compute file hash for freshness tracking
+        from ..analysis.parser import compute_file_hash
+        from datetime import datetime
+        actual_file_path = base_path / file_path
+        current_hash = compute_file_hash(actual_file_path) if actual_file_path.exists() else None
+
+        # Update manifest with context_ref and description hash
+        records = list(read_jsonl(brief_path / MANIFEST_FILE))
+        for record in records:
+            if record["type"] == "file" and record["path"] == file_path:
+                record["context_ref"] = str(context_file.relative_to(brief_path))
+                record["described_at"] = datetime.now().isoformat()
+                if current_hash:
+                    record["description_hash"] = current_hash
+                break
+        write_jsonl(brief_path / MANIFEST_FILE, records)
+
+        return full_content
+    except Exception:
+        return None
+
+
 def format_function_description(desc: FunctionDescription) -> str:
     """Format function description as markdown."""
     lines = [

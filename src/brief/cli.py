@@ -27,6 +27,7 @@ from .commands import task as task_cmd
 from .commands import memory as memory_cmd
 from .commands import trace as trace_cmd
 from .commands import contracts as contracts_cmd
+from .commands import config_cmd
 
 # Register init as a direct command (not a subcommand)
 app.command(name="init")(init_cmd.init)
@@ -41,6 +42,7 @@ app.command(name="deps")(report_cmd.deps)
 app.command(name="coverage")(report_cmd.coverage_cmd)
 app.command(name="stale")(report_cmd.stale)
 app.command(name="inventory")(report_cmd.inventory)
+app.command(name="status")(report_cmd.status)
 
 
 # Register describe commands as a subcommand group
@@ -61,6 +63,9 @@ app.add_typer(trace_cmd.app, name="trace")
 
 # Register contracts commands as a subcommand group
 app.add_typer(contracts_cmd.app, name="contracts")
+
+# Register config commands as a subcommand group
+app.add_typer(config_cmd.app, name="config")
 
 
 # Resume command - top-level for easy access

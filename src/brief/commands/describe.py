@@ -1,4 +1,5 @@
 """Description generation commands for Brief."""
+import os
 import typer
 from pathlib import Path
 from typing import Optional
@@ -9,13 +10,42 @@ from ..models import ManifestFileRecord, ManifestClassRecord, ManifestFunctionRe
 app = typer.Typer()
 
 
-def update_manifest_context_ref(brief_path: Path, file_path: str, context_ref: str) -> None:
-    """Update manifest with context reference."""
+def set_baml_log_level(verbose: bool) -> None:
+    """Set BAML log level based on verbose flag.
+
+    When not verbose, suppress BAML's detailed output.
+    """
+    if not verbose:
+        os.environ["BAML_LOG"] = "error"
+    else:
+        # Remove the env var to allow full logging
+        os.environ.pop("BAML_LOG", None)
+
+
+def update_manifest_context_ref(
+    brief_path: Path,
+    file_path: str,
+    context_ref: str,
+    description_hash: str | None = None
+) -> None:
+    """Update manifest with context reference and description hash.
+
+    Args:
+        brief_path: Path to .brief directory
+        file_path: Relative path to the file
+        context_ref: Path to the description file
+        description_hash: Hash of the file at time of description generation
+    """
+    from datetime import datetime
+
     records = list(read_jsonl(brief_path / MANIFEST_FILE))
 
     for record in records:
         if record["type"] == "file" and record["path"] == file_path:
             record["context_ref"] = context_ref
+            record["described_at"] = datetime.now().isoformat()
+            if description_hash:
+                record["description_hash"] = description_hash
             break
 
     write_jsonl(brief_path / MANIFEST_FILE, records)
@@ -28,6 +58,7 @@ def describe_file_cmd(
     source: Optional[Path] = typer.Option(None, "--source", "-s", help="Source directory where files are located"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model to use"),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing description"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed BAML output"),
 ) -> None:
     """Generate description for a file.
 
@@ -39,6 +70,8 @@ def describe_file_cmd(
         brief describe file utils.py --source src/
     """
     from ..generation.generator import describe_file, format_file_description, is_baml_available
+
+    set_baml_log_level(verbose)
 
     brief_path = get_brief_path(base)
     if not brief_path.exists():
@@ -94,8 +127,17 @@ def describe_file_cmd(
         header = f"# {file_path}\n\n"
         context_file.write_text(header + markdown)
 
-        # Update manifest with context_ref
-        update_manifest_context_ref(brief_path, file_path, str(context_file.relative_to(brief_path)))
+        # Compute file hash for freshness tracking
+        from ..analysis.parser import compute_file_hash
+        actual_file_path = source_path / file_path
+        current_hash = compute_file_hash(actual_file_path) if actual_file_path.exists() else None
+
+        # Update manifest with context_ref and description hash
+        update_manifest_context_ref(
+            brief_path, file_path,
+            str(context_file.relative_to(brief_path)),
+            description_hash=current_hash
+        )
 
         typer.echo(f"Description saved to {context_file}")
         typer.echo("")
@@ -110,10 +152,13 @@ def describe_file_cmd(
 def describe_module_cmd(
     module_name: str = typer.Argument(..., help="Module to describe"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed BAML output"),
 ) -> None:
     """Generate description for a module (directory)."""
     from ..generation.generator import describe_module, format_module_description, is_baml_available
     from ..reporting.overview import get_module_structure
+
+    set_baml_log_level(verbose)
 
     brief_path = get_brief_path(base)
     if not brief_path.exists():
@@ -179,8 +224,16 @@ def describe_batch(
     limit: int = typer.Option(10, "--limit", "-l", help="Max files to describe"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
     skip_existing: bool = typer.Option(True, "--skip-existing/--include-existing", help="Skip already described files"),
+    include_other: bool = typer.Option(False, "--include-other", "-a", help="Include non-Python files (scripts, configs, etc.)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed BAML output"),
 ) -> None:
-    """Generate descriptions for multiple files."""
+    """Generate descriptions for multiple files.
+
+    By default, only describes Python files. Use --include-other to also
+    describe scripts, configs, and other tracked files.
+    """
+    set_baml_log_level(verbose)
+
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
@@ -188,15 +241,28 @@ def describe_batch(
 
     # Collect files to describe
     files_to_describe: list[str] = []
+    context_files_dir = brief_path / CONTEXT_DIR / "files"
+
     for record in read_jsonl(brief_path / MANIFEST_FILE):
         if record["type"] != "file":
+            continue
+
+        # Filter by file type
+        is_python = record.get("extension") == ".py" or record.get("parsed", True)
+        if not is_python and not include_other:
             continue
 
         if path_filter and path_filter not in record["path"]:
             continue
 
-        if skip_existing and record.get("context_ref"):
-            continue
+        # Check if description already exists (either in manifest or as actual file)
+        if skip_existing:
+            if record.get("context_ref"):
+                continue
+            # Also check if description file exists on disk
+            desc_filename = record["path"].replace("/", "__").replace("\\", "__") + ".md"
+            if (context_files_dir / desc_filename).exists():
+                continue
 
         files_to_describe.append(record["path"])
 
@@ -212,7 +278,7 @@ def describe_batch(
     for i, fp in enumerate(files_to_describe):
         typer.echo(f"[{i+1}/{len(files_to_describe)}] {fp}")
         try:
-            describe_file_cmd(fp, base, model=None, force=True)
+            describe_file_cmd(fp, base=base, source=None, model=None, force=True, verbose=verbose)
         except Exception as e:
             typer.echo(f"  Error: {e}")
 

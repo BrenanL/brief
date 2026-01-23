@@ -403,11 +403,12 @@ if task:
 
 | Command | Description | LLM? |
 |---------|-------------|------|
+| `brief status` | Project dashboard with metrics | No |
 | `brief overview` | Project summary | No |
-| `brief tree` | Directory tree | No |
+| `brief tree` | Directory tree with status markers | No |
 | `brief deps` | Dependency graph | No |
 | `brief inventory` | Code inventory | No |
-| `brief coverage` | Analysis coverage | No |
+| `brief coverage` | Analysis coverage + freshness | No |
 | `brief stale` | Changed files | No |
 
 ### Contracts

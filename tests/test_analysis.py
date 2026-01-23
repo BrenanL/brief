@@ -84,8 +84,10 @@ class TestPythonFileParser:
 
         imports = list(parser.get_imports())
         assert len(imports) == 1
-        assert imports[0][0] == "typing"
-        assert "List" in imports[0][1]
+        module, level, names = imports[0]
+        assert module == "typing"
+        assert level == 0  # Absolute import
+        assert "List" in names
 
     def test_parser_extracts_async_functions(self, temp_python_file) -> None:
         """Test parser correctly identifies async functions."""
