@@ -12,6 +12,7 @@ This file tracks issues, ideas, and plans. Read this first when starting work.
 
 - need to do more robust testing on when and how the agents are actually using brief. I'm not convinced the prompting and hooks are sufficient right now to constrain/encourage usage. The pre-tool call hook may not actually be going to the agent, and instead just to the ui of claude code
 - context.py, the autogenerate descriptions thing, can have a flag to force doing this, but should also be a config behavior. I want default to be yes, generate. It is unreasonable to have to remember to type in flags each time if you want fresh context. 
+- how are embeddings actually generated, like what command does it, how do we make this feel better or be easier to use. 
 - need a pass on our rulesets for context package generation. Ideally, we will make this configurable at some point, so users can decide what a good context package looks like. For now, we need to define things like: how many files to return? should we limit the number, or should the number inherently be different based on what you're looking for? what proximity for embedding search is relevant? Should we refine search terms before embedding search (as in, generate multiple sentences to cover different solution spaces around the query, and vector search for each)? how to verify what execution pipelines we return? what exactly are we returning, is it important/necessary, are we not returning something we should? how much of what could go in a context package is not yet implemented in brief? can we better BLUF the context packages (gen an llm summary of the package to put at top, list an index of what is in the context package, etc)?
 - in doc exclude config, what about date/time formats other than YYYY-MM-DD?
 - define a default behavior for using brief. I like the default to be getting a context package. So running `brief "add logging to execution tracing"` would just give me the context package. Essentially, set it up as a shortcut for `brief context get`, we can set the shortcut to do something else in the future if we want
@@ -32,6 +33,9 @@ This file tracks issues, ideas, and plans. Read this first when starting work.
 - need a method of clearing and re-generating all of the brief 'cache' files without damaging the descriptions, summaries, etc. The analyzed etc files are 'free' and the llm-generated ones cost money (and more time). So clearing and re-analyzing should be easy. this is also nice for dev and for rolling out updates when we change how the files work etc.
 - Not sure how it works right now, but for file context in the context package, I like the idea of returning the signatures if no description/summary, but not returning both the description and signatures. Too much if we do that.
 - the help messages from the `brief trace` branch of commands are now great. Let's go through every other command in here and get them all up to the same quality.
+- running `brief describe batch` is always generating descriptions for test files first. Maybe it has to do with the ordering, but it feels weird becasue no one cares about descriptions for test files. I actually want the default behavior to be not to describe test files, and something you can put an optional param config in to have it do. 
+- figure out a good format for the claude permissions file to permit all brief commands. I'm not sure on syntax to just allow them all. 
+- what models are actually being used? i see usage on gpt-4o, not gpt-5-mini in my console. 
 ---
 ## Notes / Open Questions
 
@@ -48,6 +52,11 @@ The tracing system works well for functions that call other functions directly, 
 
 These limitations mean some traces are shorter than ideal when most calls are to class methods or external libraries. The core path through module-level functions traces well.
 
+### Pre-Release testing
+What tests do we need to run, and how will we design/create them to ensure that brief actually makes a difference to performance and is semi-stable for claude code usage? Lets quantify and/or qualify performance gains, and ensure that it is working in production-analagous environments before publishing fully. 
+
+### Release prep
+what do we need to do before release? i.e. include a license file and attributions, clean up documentation and prune old docs, ensure security, no keys committed, .env.example, how to install, ease of install so you can just use instead of install as a developer, remove any developer personal information, should we squash commits to remove initial dev history to ensure no unsafe data becomes accessible, etc. 
 ---
 
 ## IDEAS
