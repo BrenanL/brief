@@ -6,36 +6,40 @@ This file tracks issues, ideas, and plans. Read this first when starting work.
 
 > **For AI agents**: Do NOT delete items. Move completed/resolved items to the `## ARCHIVE` section at the bottom with a date stamp.
 
+> **Task Plan**: See `docs/TASK_PLAN.md` for prioritized, detailed implementation plans for these issues. Created 2025-01-23.
+
 ---
 
 ## CURRENT ISSUES
 
-- need to do more robust testing on when and how the agents are actually using brief. I'm not convinced the prompting and hooks are sufficient right now to constrain/encourage usage. The pre-tool call hook may not actually be going to the agent, and instead just to the ui of claude code
-- context.py, the autogenerate descriptions thing, can have a flag to force doing this, but should also be a config behavior. I want default to be yes, generate. It is unreasonable to have to remember to type in flags each time if you want fresh context. 
-- how are embeddings actually generated, like what command does it, how do we make this feel better or be easier to use. 
-- need a pass on our rulesets for context package generation. Ideally, we will make this configurable at some point, so users can decide what a good context package looks like. For now, we need to define things like: how many files to return? should we limit the number, or should the number inherently be different based on what you're looking for? what proximity for embedding search is relevant? Should we refine search terms before embedding search (as in, generate multiple sentences to cover different solution spaces around the query, and vector search for each)? how to verify what execution pipelines we return? what exactly are we returning, is it important/necessary, are we not returning something we should? how much of what could go in a context package is not yet implemented in brief? can we better BLUF the context packages (gen an llm summary of the package to put at top, list an index of what is in the context package, etc)?
-- in doc exclude config, what about date/time formats other than YYYY-MM-DD?
-- define a default behavior for using brief. I like the default to be getting a context package. So running `brief "add logging to execution tracing"` would just give me the context package. Essentially, set it up as a shortcut for `brief context get`, we can set the shortcut to do something else in the future if we want
-- Let's add google gemini as a provider for our llm work. Then we can run some side-by-side tests for descriptions from a couple openai models, a couple gemini models, and claude to pick a default. Then we can also make this an optional override in the config file.
-- need a test pass on prompting for description generation. should we have conditionals, as in by filetype, etc for what prompt we should use? what provides the best BLUF and agent steering in a description, how do our prompts achieve that?
-- the relationship between embeddings.db and our context/files/ and when they are used is not fully clear to me. We need an analysis of how they are both currently used, how they are used together, and how we should best use them both. 
-- how should we handle tests? if there is a test/ directory, do we want to brief index them the same way as other code? or instead give overviews of what is in the test dir? what benefit comes from indexing tests, and what drawbacks come from not indexing them?
-- consider some mode for disabline the task stuff, to use an alternative like beads and not have confusion with the two systems. 
-- `brief overview` is pretty bad, very unreadable and not good looking. Not sure what it is trying to communicate either, what should this actually do?
-- how can we set this up to automate the documentation generated, or lazy load, etc. From the perspective of first time use, you init, you analyze, then you `brief context get`. Any time I use it, I want there to be descriptions with those files. Right now, the user has no idea of 1. the concept of file descriptions and how they would be used by brief or by agents and 2. if the context package will have descriptions. Particularly difficult when it is just an agent doing the calling, and the user never runs `context get`. 
-- a setup wizard, so give me a few questions and it will run the commands/setup needed. An example is to just ask "do you want to generate file descriptions automatically?" and if yes, then any time a file is either used as context for the first time, or if stale, it will auto-gen the llm description for it. 
-- no indication on llm not available. Also, what are the placeholders? Placeholders would hurt context. It's one thing to give all of the function names rather than a description, another if it is "insert description here"
+*Most items below now have detailed implementation plans in TASK_PLAN.md with priority levels and dependency tracking.*
+
+- `[P0-3]` need to do more robust testing on when and how the agents are actually using brief. I'm not convinced the prompting and hooks are sufficient right now to constrain/encourage usage. The pre-tool call hook may not actually be going to the agent, and instead just to the ui of claude code
+- `[P1-1]` context.py, the autogenerate descriptions thing, can have a flag to force doing this, but should also be a config behavior. I want default to be yes, generate. It is unreasonable to have to remember to type in flags each time if you want fresh context.
+- `[P3-2]` how are embeddings actually generated, like what command does it, how do we make this feel better or be easier to use.
+- `[P3-3]` need a pass on our rulesets for context package generation. Ideally, we will make this configurable at some point, so users can decide what a good context package looks like. For now, we need to define things like: how many files to return? should we limit the number, or should the number inherently be different based on what you're looking for? what proximity for embedding search is relevant? Should we refine search terms before embedding search (as in, generate multiple sentences to cover different solution spaces around the query, and vector search for each)? how to verify what execution pipelines we return? what exactly are we returning, is it important/necessary, are we not returning something we should? how much of what could go in a context package is not yet implemented in brief? can we better BLUF the context packages (gen an llm summary of the package to put at top, list an index of what is in the context package, etc)?
+- `[P2-4]` in doc exclude config, what about date/time formats other than YYYY-MM-DD?
+- `[P1-6]` define a default behavior for using brief. I like the default to be getting a context package. So running `brief "add logging to execution tracing"` would just give me the context package. Essentially, set it up as a shortcut for `brief context get`, we can set the shortcut to do something else in the future if we want
+- `[P2-6]` Let's add google gemini as a provider for our llm work. Then we can run some side-by-side tests for descriptions from a couple openai models, a couple gemini models, and claude to pick a default. Then we can also make this an optional override in the config file.
+- `[P2-7]` need a test pass on prompting for description generation. should we have conditionals, as in by filetype, etc for what prompt we should use? what provides the best BLUF and agent steering in a description, how do our prompts achieve that?
+- `[P3-1]` the relationship between embeddings.db and our context/files/ and when they are used is not fully clear to me. We need an analysis of how they are both currently used, how they are used together, and how we should best use them both.
+- `[P1-3 + DEFERRED]` how should we handle tests? if there is a test/ directory, do we want to brief index them the same way as other code? or instead give overviews of what is in the test dir? what benefit comes from indexing tests, and what drawbacks come from not indexing them? *(P1-3 handles src/ priority ordering; DEFERRED handles conditional description tiers)*
+- `[P2-5]` consider some mode for disabline the task stuff, to use an alternative like beads and not have confusion with the two systems.
+- `[P2-2]` `brief overview` is pretty bad, very unreadable and not good looking. Not sure what it is trying to communicate either, what should this actually do?
+- `[P1-1]` how can we set this up to automate the documentation generated, or lazy load, etc. From the perspective of first time use, you init, you analyze, then you `brief context get`. Any time I use it, I want there to be descriptions with those files. Right now, the user has no idea of 1. the concept of file descriptions and how they would be used by brief or by agents and 2. if the context package will have descriptions. Particularly difficult when it is just an agent doing the calling, and the user never runs `context get`. *(Same as auto-generate config)*
+- `[P2-3]` a setup wizard, so give me a few questions and it will run the commands/setup needed. An example is to just ask "do you want to generate file descriptions automatically?" and if yes, then any time a file is either used as context for the first time, or if stale, it will auto-gen the llm description for it.
+- `[P1-2]` no indication on llm not available. Also, what are the placeholders? Placeholders would hurt context. It's one thing to give all of the function names rather than a description, another if it is "insert description here"
 ```
 # 12. Generate descriptions (uses placeholder without BAML/LLM)
   brief describe batch --limit 5
 ```
-- `brief memory remember <key> <value>` and `brief memory recall <key>` are very cumbersome. instead we want `brief memory add <> <>` and `brief memory get <>`. I like the idea of aliasing these two as well, so you can optionally do `brief remember <key> <value>` and `brief recall <key>`.
-- need a method of clearing and re-generating all of the brief 'cache' files without damaging the descriptions, summaries, etc. The analyzed etc files are 'free' and the llm-generated ones cost money (and more time). So clearing and re-analyzing should be easy. this is also nice for dev and for rolling out updates when we change how the files work etc.
-- Not sure how it works right now, but for file context in the context package, I like the idea of returning the signatures if no description/summary, but not returning both the description and signatures. Too much if we do that.
-- the help messages from the `brief trace` branch of commands are now great. Let's go through every other command in here and get them all up to the same quality.
-- running `brief describe batch` is always generating descriptions for test files first. Maybe it has to do with the ordering, but it feels weird becasue no one cares about descriptions for test files. I actually want the default behavior to be not to describe test files, and something you can put an optional param config in to have it do. 
-- figure out a good format for the claude permissions file to permit all brief commands. I'm not sure on syntax to just allow them all. 
-- what models are actually being used? i see usage on gpt-4o, not gpt-5-mini in my console. 
+- `[P1-5]` `brief memory remember <key> <value>` and `brief memory recall <key>` are very cumbersome. instead we want `brief memory add <> <>` and `brief memory get <>`. I like the idea of aliasing these two as well, so you can optionally do `brief remember <key> <value>` and `brief recall <key>`.
+- `[P0-1]` need a method of clearing and re-generating all of the brief 'cache' files without damaging the descriptions, summaries, etc. The analyzed etc files are 'free' and the llm-generated ones cost money (and more time). So clearing and re-analyzing should be easy. this is also nice for dev and for rolling out updates when we change how the files work etc.
+- `[P1-4]` Not sure how it works right now, but for file context in the context package, I like the idea of returning the signatures if no description/summary, but not returning both the description and signatures. Too much if we do that.
+- `[P2-1]` the help messages from the `brief trace` branch of commands are now great. Let's go through every other command in here and get them all up to the same quality.
+- `[P1-3]` running `brief describe batch` is always generating descriptions for test files first. Maybe it has to do with the ordering, but it feels weird becasue no one cares about descriptions for test files. I actually want the default behavior to be not to describe test files, and something you can put an optional param config in to have it do.
+- `[NO TASK]` figure out a good format for the claude permissions file to permit all brief commands. I'm not sure on syntax to just allow them all. *(Quick investigation, not a full task)*
+- `[NO TASK]` what models are actually being used? i see usage on gpt-4o, not gpt-5-mini in my console. *(Quick investigation, not a full task)* 
 ---
 ## Notes / Open Questions
 
@@ -52,19 +56,21 @@ The tracing system works well for functions that call other functions directly, 
 
 These limitations mean some traces are shorter than ideal when most calls are to class methods or external libraries. The core path through module-level functions traces well.
 
-### Pre-Release testing
-What tests do we need to run, and how will we design/create them to ensure that brief actually makes a difference to performance and is semi-stable for claude code usage? Lets quantify and/or qualify performance gains, and ensure that it is working in production-analagous environments before publishing fully. 
+### Pre-Release testing `[DEFERRED]`
+What tests do we need to run, and how will we design/create them to ensure that brief actually makes a difference to performance and is semi-stable for claude code usage? Lets quantify and/or qualify performance gains, and ensure that it is working in production-analagous environments before publishing fully.
 
-### Release prep
+### Release prep `[DEFERRED]`
 what do we need to do before release? i.e. include a license file and attributions, clean up documentation and prune old docs, ensure security, no keys committed, .env.example, how to install, ease of install so you can just use instead of install as a developer, remove any developer personal information, should we squash commits to remove initial dev history to ensure no unsafe data becomes accessible, etc. 
 ---
 
 ## IDEAS
 
-- quick-consult tool. When claude code gets stuck on something, I like to switch to gemini to approach it. This involves loading up the right context (figuring out what files to copy-paste or otherwise send over) and explaining what the problem is and what todo. Instead, we have claude code call a consultant tool within brief to provide the right context package and have a conversation with gemini to figure it out. I mean, I could potentially standalone this as it's own little thing because people would find this interesting. `brief consult <prompt> <context package or keywords, etc>`
+- `[DEFERRED]` quick-consult tool. When claude code gets stuck on something, I like to switch to gemini to approach it. This involves loading up the right context (figuring out what files to copy-paste or otherwise send over) and explaining what the problem is and what todo. Instead, we have claude code call a consultant tool within brief to provide the right context package and have a conversation with gemini to figure it out. I mean, I could potentially standalone this as it's own little thing because people would find this interesting. `brief consult <prompt> <context package or keywords, etc>`
 
-### Logging for development
-I would like to see when the agent calls `brief context get` and other commands to check if they are being used. Helpful for debugging our prompting and rules and if the agent is obeying them
+### Logging for development `[P0-2]`
+I would like to see when the agent calls `brief context get` and other commands to check if they are being used. Helpful for debugging our prompting and rules and if the agent is obeying them.
+
+**Plan (2025-01-23)**: Log to `.brief-logs/` by default (outside .brief/ so logs survive directory resets). Make location configurable. Include timestamp, command, arguments. See TASK_PLAN.md P0-2.
 
 ### Better Dashboard / Status Overview (Partially Done)
 **Added**: 2026-01-22
@@ -75,14 +81,14 @@ I would like to see when the agent calls `brief context get` and other commands 
 - [x] Color-coded coverage percentages and freshness indicators
 
 **Remaining ideas**:
-- `brief ls` or `brief browse` - interactive file browser with analysis status
-- `brief coverage --detailed` - breakdown by directory
-- Compact summary mode for `context get` (just file list + stats, not full descriptions)
-- `brief config show` - display current configuration clearly
-- Collapsible sections or pagination for large outputs
-- token counting for context packages. Token counter utility to use anywhere, but include token counts with context get calls.
-- attaching plans to tasks. Some way of more robust documents etc alongside them to improve convergence. 
-- can we get autocomplete in the cli? for example, when human typing in task ids, it is a pain, being able to arrow key through them or something would be nice. Low priority, particularly if agents are touching this more than humans
+- `[DEFERRED]` `brief ls` or `brief browse` - interactive file browser with analysis status
+- `[P4-4]` `brief coverage --detailed` - breakdown by directory
+- `[P4-3]` Compact summary mode for `context get` (just file list + stats, not full descriptions)
+- `[P4-1]` `brief config show` - display current configuration clearly
+- `[DEFERRED]` Collapsible sections or pagination for large outputs
+- `[P4-2]` token counting for context packages. Token counter utility to use anywhere, but include token counts with context get calls.
+- `[DEFERRED]` attaching plans to tasks. Some way of more robust documents etc alongside them to improve convergence.
+- `[DEFERRED]` can we get autocomplete in the cli? for example, when human typing in task ids, it is a pain, being able to arrow key through them or something would be nice. Low priority, particularly if agents are touching this more than humans
 
 ---
 
@@ -94,12 +100,12 @@ I would like to see when the agent calls `brief context get` and other commands 
 - [x] Lazy description generation (DONE 2026-01-22)
 - [x] Freshness tracking for descriptions (DONE 2026-01-22)
 
-### v0.3 - Better Search
+### v0.3 - Better Search `[DEFERRED]`
 - [ ] Improved semantic search ranking
 - [ ] Search result explanations (why this file matched)
 - [ ] Filter by file type/directory
 
-### Someday/Maybe
+### Someday/Maybe `[DEFERRED]`
 - Support for languages other than Python
 - VS Code extension
 - Web UI for browsing context
