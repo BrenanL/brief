@@ -142,14 +142,25 @@ class MarkdownParser:
 
 
 def is_dated_filename(filename: str) -> bool:
-    """Check if filename contains a date pattern (YYYY-MM-DD or similar).
+    """Check if filename contains a date pattern.
 
     These files are typically ephemeral (session logs, status reports).
+
+    Supported formats:
+    - YYYY-MM-DD (ISO format)
+    - YYYYMMDD (compact)
+    - MM-DD-YYYY (American)
+    - DD-MM-YYYY (European)
+    - YYYY_MM_DD (underscore variant)
+    - YYYY.MM.DD (dot variant)
     """
-    # YYYY-MM-DD pattern
-    if re.search(r'\d{4}-\d{2}-\d{2}', filename):
+    # YYYY-MM-DD or YYYY_MM_DD or YYYY.MM.DD (ISO-like formats)
+    if re.search(r'\d{4}[-_.]\d{2}[-_.]\d{2}', filename):
         return True
-    # YYYYMMDD pattern
-    if re.search(r'\d{8}', filename):
+    # YYYYMMDD pattern (8 consecutive digits that look like a date)
+    if re.search(r'(?<!\d)\d{8}(?!\d)', filename):
+        return True
+    # MM-DD-YYYY or DD-MM-YYYY (month/day first formats)
+    if re.search(r'\d{2}[-_.]\d{2}[-_.]\d{4}', filename):
         return True
     return False

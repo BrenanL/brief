@@ -1,5 +1,6 @@
 """Brief CLI - Context infrastructure for AI coding agents."""
 
+import sys
 import typer
 from pathlib import Path
 from typing import Optional
@@ -14,7 +15,63 @@ app = typer.Typer(
 @app.callback()
 def main(ctx: typer.Context) -> None:
     """Brief - Context infrastructure for AI coding agents."""
-    pass
+    # Log command invocation for development tracking
+    from .logging import log_from_cli
+    try:
+        log_from_cli()
+    except Exception:
+        # Don't let logging failures break the CLI
+        pass
+
+
+def _run_quick_query(query: str, base: Path) -> None:
+    """Run a quick context query."""
+    from .config import get_brief_path, MANIFEST_FILE
+    from .retrieval.context import build_context_for_query
+    from .retrieval.search import hybrid_search
+    from .commands.context import _get_auto_generate_default, _check_manifest_has_files
+
+    brief_path = get_brief_path(base)
+    if not brief_path.exists():
+        typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_manifest_has_files(brief_path):
+        typer.echo("Error: No files in manifest. Run 'brief analyze all' first.", err=True)
+        raise typer.Exit(1)
+
+    should_auto_generate = _get_auto_generate_default(brief_path)
+
+    def search_func(q: str):
+        return hybrid_search(brief_path, q)
+
+    package = build_context_for_query(
+        brief_path,
+        query,
+        search_func,
+        base_path=base,
+        include_contracts=True,
+        include_paths=True,
+        include_patterns=True,
+        auto_generate_descriptions=should_auto_generate
+    )
+
+    typer.echo(package.to_markdown())
+
+
+# Quick context query command
+@app.command(name="q")
+def query_shortcut(
+    query: str = typer.Argument(..., help="Query for context"),
+    base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+) -> None:
+    """Quick context lookup (shortcut for 'context get').
+
+    Example:
+        brief q "add logging to tracing"
+        brief q "error handling patterns"
+    """
+    _run_quick_query(query, base)
 
 
 # Import and register command modules
@@ -28,9 +85,17 @@ from .commands import memory as memory_cmd
 from .commands import trace as trace_cmd
 from .commands import contracts as contracts_cmd
 from .commands import config_cmd
+from .commands import reset as reset_cmd
+from .commands import setup as setup_cmd
 
 # Register init as a direct command (not a subcommand)
 app.command(name="init")(init_cmd.init)
+
+# Register setup wizard as a direct command
+app.command(name="setup")(setup_cmd.setup)
+
+# Register reset as a direct command
+app.command(name="reset")(reset_cmd.reset)
 
 # Register analyze commands as a subcommand group
 app.add_typer(analyze_cmd.app, name="analyze")
@@ -57,6 +122,10 @@ app.add_typer(task_cmd.app, name="task")
 
 # Register memory commands as a subcommand group
 app.add_typer(memory_cmd.app, name="memory")
+
+# Register top-level aliases for common memory commands
+app.command(name="remember")(memory_cmd.memory_add)
+app.command(name="recall")(memory_cmd.memory_get)
 
 # Register trace commands as a subcommand group
 app.add_typer(trace_cmd.app, name="trace")

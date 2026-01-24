@@ -6,41 +6,40 @@
 // ============================================================
 
 class FunctionDescription {
-    purpose string @description("One sentence describing what the function does")
-    behavior string @description("How the function accomplishes its purpose")
-    inputs string @description("Description of parameters and their purpose")
-    outputs string @description("What the function returns or yields")
-    side_effects string? @description("Any side effects, or null if none")
+    purpose string @description("One sentence: what this function does and WHEN to call it")
+    behavior string @description("Key algorithm/steps - what makes this function unique")
+    inputs string @description("Parameters: name, type, constraints")
+    outputs string @description("Return value: type and meaning")
+    side_effects string? @description("File I/O, state changes, exceptions thrown, or null")
 }
 
 class ClassDescription {
-    purpose string @description("One sentence describing what the class does")
-    responsibility string @description("What domain/concern this class owns")
-    key_methods string @description("Brief description of important methods")
-    state string? @description("What state/data this class manages")
-    relationships string? @description("How it relates to other classes")
+    purpose string @description("One sentence: what this class represents and WHEN to use it")
+    responsibility string @description("Single responsibility: what domain concern it owns")
+    key_methods string @description("Most important methods and when to call each")
+    state string? @description("Instance data this class manages, or null")
+    relationships string? @description("Parent classes, key collaborators, or null")
 }
 
 class FileDescription {
-    purpose string @description("One sentence describing what this file provides")
-    contents string @description("Summary of classes and functions defined")
-    role string @description("How this file fits into the larger system")
-    dependencies string @description("What it depends on and why")
-    exports string @description("What other code should import from here")
+    purpose string @description("One sentence: what capability this file provides to the codebase")
+    contents string @description("Key exports: classes, functions, constants")
+    role string @description("System context: how other code uses this file")
+    dependencies string @description("Critical imports and why they're needed")
+    exports string @description("What to import: primary public API")
 }
 
 class ModuleDescription {
-    purpose string @description("One sentence describing what this module provides")
-    components string @description("Summary of key components")
-    architecture string @description("How components work together")
-    public_api string @description("What should be imported from this module")
+    purpose string @description("One sentence: what this module/package provides")
+    components string @description("Key files and their responsibilities")
+    architecture string @description("How components collaborate")
+    public_api string @description("Recommended imports for external use")
 }
 
 // ============================================================
 // Functions
 // ============================================================
 
-// Function to describe what a Python function does
 function DescribeFunction(
     function_name: string,
     function_code: string,
@@ -50,35 +49,49 @@ function DescribeFunction(
     client Default
 
     prompt #"
-        You are a code documentation expert. Analyze this Python function and provide a concise description.
+        Analyze this Python function for an AI coding agent.
 
-        File context: {{ file_context }}
+        Context: {{ file_context }}
+        Function: {{ function_name }}
 
-        Function name: {{ function_name }}
-
-        Code:
         ```python
         {{ function_code }}
         ```
 
         {% if docstring %}
-        Existing docstring: {{ docstring }}
+        Docstring: {{ docstring }}
         {% endif %}
 
-        Provide a description following this structure:
-        1. PURPOSE: One sentence describing what this function does (the "why")
-        2. BEHAVIOR: How it accomplishes its purpose (key steps, not line-by-line)
-        3. INPUTS: What it expects (parameters and their purpose)
-        4. OUTPUTS: What it returns or yields
-        5. SIDE_EFFECTS: Any side effects (file I/O, state changes, etc.) or null if none
+        Write descriptions optimized for AI agents working on this codebase:
 
-        Be concise but complete. Focus on understanding, not just restating the code.
+        PURPOSE: Start with WHEN to use this function, then what it does.
+          Good: "Call this to validate user input before saving. Checks format and sanitizes data."
+          Bad: "This function validates input."
+
+        BEHAVIOR: Focus on the unique logic, not obvious code flow.
+          - What algorithm or approach?
+          - What edge cases are handled?
+          - What makes this different from similar functions?
+
+        INPUTS: Be specific about types and constraints.
+          - What values are valid?
+          - What happens with invalid input?
+
+        OUTPUTS: What does the caller receive?
+          - Return type and meaning
+          - None vs exceptions
+
+        SIDE_EFFECTS: List any effects beyond the return value, or null.
+          - File/DB operations
+          - State mutations
+          - Exceptions thrown
+
+        Be concise. Each field should be 1-2 sentences max.
 
         {{ ctx.output_format }}
     "#
 }
 
-// Function to describe what a class does
 function DescribeClass(
     class_name: string,
     class_code: string,
@@ -89,37 +102,45 @@ function DescribeClass(
     client Default
 
     prompt #"
-        You are a code documentation expert. Analyze this Python class and provide a concise description.
+        Analyze this Python class for an AI coding agent.
 
-        File context: {{ file_context }}
-
-        Class name: {{ class_name }}
-
+        Context: {{ file_context }}
+        Class: {{ class_name }}
         Methods: {{ method_names }}
 
-        Code:
         ```python
         {{ class_code }}
         ```
 
         {% if docstring %}
-        Existing docstring: {{ docstring }}
+        Docstring: {{ docstring }}
         {% endif %}
 
-        Provide a description following this structure:
-        1. PURPOSE: One sentence describing what this class represents/does
-        2. RESPONSIBILITY: What domain/concern this class owns
-        3. KEY_METHODS: Brief description of the most important methods
-        4. STATE: What state/data this class manages (if any), or null
-        5. RELATIONSHIPS: How it relates to other classes (inheritance, composition), or null
+        Write descriptions optimized for AI agents working on this codebase:
 
-        Be concise but complete.
+        PURPOSE: Start with WHEN to use this class.
+          Good: "Use when you need to parse markdown files. Handles headings, links, and code blocks."
+          Bad: "A class for parsing markdown."
+
+        RESPONSIBILITY: What single concern does this class own?
+          - Be specific about boundaries
+          - What does it NOT handle?
+
+        KEY_METHODS: For each important method:
+          - When to call it
+          - What it does (briefly)
+          Skip obvious getters/setters.
+
+        STATE: What instance data does it manage? Or null if stateless.
+
+        RELATIONSHIPS: Parent classes or key collaborators? Or null if standalone.
+
+        Be concise. Each field should be 1-3 sentences max.
 
         {{ ctx.output_format }}
     "#
 }
 
-// Function to describe what a file/module does
 function DescribeFile(
     file_path: string,
     file_content: string,
@@ -130,33 +151,53 @@ function DescribeFile(
     client Default
 
     prompt #"
-        You are a code documentation expert. Analyze this Python file and provide a concise description.
+        Analyze this Python file for an AI coding agent.
 
         File: {{ file_path }}
+        Classes: {{ class_names }}
+        Functions: {{ function_names }}
+        Imports: {{ imports }}
 
-        Classes defined: {{ class_names }}
-        Functions defined: {{ function_names }}
-        Key imports: {{ imports }}
-
-        Full code:
         ```python
         {{ file_content }}
         ```
 
-        Provide a description following this structure:
-        1. PURPOSE: One sentence describing what this file/module provides
-        2. CONTENTS: Summary of what's defined here
-        3. ROLE: How this file fits into the larger system
-        4. DEPENDENCIES: What it depends on and why
-        5. EXPORTS: What other code should import from here
+        Determine file type from path:
+        - "commands/" or "cli" = CLI command module
+        - "models" or "types" = Data models
+        - "test_" prefix = Test file
+        - "utils" or "helpers" = Utility functions
+        - Other = Core implementation
 
-        Be concise but complete.
+        Write descriptions optimized for AI agents working on this codebase:
+
+        PURPOSE: Start with WHEN an agent should look at this file.
+          Good: "Look here when implementing new CLI commands. Contains Typer app setup and command patterns."
+          Bad: "This file contains CLI commands."
+
+        CONTENTS: List the key exports an agent might import.
+          - Main classes and their roles
+          - Important functions
+          - Constants or config values
+
+        ROLE: How does this file fit in the system architecture?
+          - What layer is it? (CLI, business logic, data, etc.)
+          - What depends on it?
+
+        DEPENDENCIES: What critical imports does it need and why?
+          - External packages
+          - Internal modules
+
+        EXPORTS: What should agents import from here?
+          - Primary public API
+          - Entry points
+
+        Be concise. Each field should be 1-3 sentences max.
 
         {{ ctx.output_format }}
     "#
 }
 
-// Function to describe a module (directory)
 function DescribeModule(
     module_name: string,
     file_summaries: string[],
@@ -166,25 +207,36 @@ function DescribeModule(
     client Default
 
     prompt #"
-        You are a code documentation expert. Analyze this Python module (directory) and provide a description.
+        Analyze this Python module (package/directory) for an AI coding agent.
 
         Module: {{ module_name }}
+        Classes: {{ class_count }}
+        Functions: {{ function_count }}
 
-        Files in this module:
+        Files:
         {% for summary in file_summaries %}
         - {{ summary }}
         {% endfor %}
 
-        Total classes: {{ class_count }}
-        Total functions: {{ function_count }}
+        Write descriptions optimized for AI agents working on this codebase:
 
-        Provide a description following this structure:
-        1. PURPOSE: One sentence describing what this module provides
-        2. COMPONENTS: Summary of key components and their roles
-        3. ARCHITECTURE: How the components work together
-        4. PUBLIC_API: What should be imported from this module
+        PURPOSE: Start with WHEN an agent should explore this module.
+          Good: "Look here when working with task management. Contains task creation, tracking, and queries."
+          Bad: "This module handles tasks."
 
-        Be concise but complete.
+        COMPONENTS: Map key files to their responsibilities.
+          - Which file does what?
+          - How to find specific functionality?
+
+        ARCHITECTURE: How do the components work together?
+          - Data flow between files
+          - Main entry points
+
+        PUBLIC_API: What should agents import?
+          - Recommended import statements
+          - Key classes/functions to use
+
+        Be concise. Each field should be 2-4 sentences max.
 
         {{ ctx.output_format }}
     "#

@@ -237,6 +237,31 @@ class TestIsDatedFilename:
         assert is_dated_filename("report_2024-01-15.md") is True
         assert is_dated_filename("report.2024-01-15.md") is True
 
+    def test_underscore_date_format(self):
+        """Test YYYY_MM_DD format."""
+        assert is_dated_filename("report_2024_01_15.md") is True
+        assert is_dated_filename("2024_12_31_summary.md") is True
+
+    def test_dot_date_format(self):
+        """Test YYYY.MM.DD format."""
+        assert is_dated_filename("report.2024.01.15.md") is True
+        assert is_dated_filename("2024.12.31.summary.md") is True
+
+    def test_american_date_format(self):
+        """Test MM-DD-YYYY and MM_DD_YYYY formats."""
+        assert is_dated_filename("report-01-15-2024.md") is True
+        assert is_dated_filename("01_15_2024_summary.md") is True
+
+    def test_european_date_format(self):
+        """Test DD-MM-YYYY and DD_MM_YYYY formats."""
+        assert is_dated_filename("report-15-01-2024.md") is True
+        assert is_dated_filename("15_01_2024_summary.md") is True
+
+    def test_compact_date_not_part_of_larger_number(self):
+        """Test that 8-digit dates don't match within larger numbers."""
+        assert is_dated_filename("id-123456789.md") is False  # 9 digits
+        assert is_dated_filename("code-1234567890.md") is False  # 10 digits
+
 
 class TestMarkdownFileRecord:
     """Tests for MarkdownFileRecord dataclass."""

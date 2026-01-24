@@ -82,8 +82,15 @@ DEFAULT_DOC_EXCLUDE = [
     "**/wip/**",
     "**/*-session-*",
     "**/*-log-*",
-    # Dated files (YYYY-MM-DD pattern in filename)
+    # Dated files - various formats typically used for logs/status reports
+    # YYYY-MM-DD (ISO format)
     "*[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*",
+    # YYYY_MM_DD (underscore variant)
+    "*[0-9][0-9][0-9][0-9]_[0-9][0-9]_[0-9][0-9]*",
+    # YYYY.MM.DD (dot variant)
+    "*[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]*",
+    # YYYYMMDD (compact)
+    "*[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*",
 ]
 
 # File extensions we fully parse (extract structure)

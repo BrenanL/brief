@@ -52,11 +52,12 @@ class TestOverview:
     def test_generate_project_overview(self, mock_brief) -> None:
         """Test generating project overview."""
         brief_path, base_path = mock_brief
-        output = generate_project_overview(brief_path)
+        # Use plain text mode for testing
+        output = generate_project_overview(brief_path, use_rich=False)
 
-        assert "Total Files Analyzed: 2" in output
-        assert "Total Classes: 1" in output
-        assert "core/" in output
+        # Check for package structure in plain text output
+        assert "Project Architecture" in output
+        assert "core" in output
 
 
 class TestTree:

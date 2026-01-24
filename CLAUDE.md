@@ -19,6 +19,22 @@ brief task list           # See what needs doing
 
 If resuming previous work: `brief resume`
 
+### CRITICAL: Compaction Summaries
+ALWAYS include an instruction to run brief resume when you generate compaction summaries. 
+If told to continue until all tasks are completed, include that instruction in your compaction summary. 
+
+### CRITICAL: After Context Compaction
+
+**When your context resets, you MUST immediately run:**
+
+```bash
+brief resume
+```
+
+This shows your active task and its full details. Do NOT try to remember what you were doing - always run `brief resume` first.
+
+If no task is active, run `brief task list` and pick the next one.
+
 ### The Core Rule
 
 **When you need to understand code, use Brief - not Read/Grep/Glob.**
@@ -35,8 +51,11 @@ This gives you: relevant files, descriptions, function signatures, related files
 ```bash
 brief task list                    # See available tasks
 brief task start <task-id>         # Mark it active
+brief task show <task-id>          # READ THE FULL TASK DESCRIPTION
 brief context get "<task topic>"   # Get relevant context
 ```
+
+**IMPORTANT**: Always run `brief task show` before starting work. The task title is just a summary - the full implementation requirements are in the description. Do not start coding until you've read the complete task specification.
 
 **Step 2: Plan with TodoWrite**
 
@@ -69,11 +88,27 @@ pytest tests/ -v -s                # Verify tests pass
 
 For detailed examples and workflow guidance, see **[docs/brief-workflow.md](docs/brief-workflow.md)**.
 
+### Autonomous Task Completion Mode (Temporary)
+
+When told to "continue until all tasks completed" or similar:
+
+1. `brief task list` - see all pending tasks
+2. `brief task start <id>` - pick highest priority ready task
+3. `brief task show <id>` - **READ THE FULL DESCRIPTION** before coding
+4. `brief context get "<topic>"` - understand relevant code
+5. Implement the task completely
+6. `pytest tests/ -v -s` - verify tests pass
+7. `brief task done <id>` - mark complete
+8. **REPEAT from step 1** until no pending tasks remain
+
+**After context compaction**: Run `brief resume` immediately, then continue from step 4.
+
 ### What NOT To Do
 
 - ❌ Don't use Read/Grep/Glob to explore code structure (use `brief context get`)
 - ❌ Don't track tasks only in TodoWrite (use Brief tasks for persistence)
 - ❌ Don't forget to mark tasks done with `brief task done`
+- ❌ Don't start coding based only on the task title (always run `brief task show` first)
 - ✅ DO use Read for specific files you already know you need
 - ✅ DO use TodoWrite for planning steps within a task
 

@@ -76,4 +76,5 @@ baml_client/
 
 # Project specific
 .brief/
+.brief-logs/
 *.jsonl.bak

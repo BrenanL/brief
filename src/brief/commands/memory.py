@@ -8,15 +8,20 @@ from ..memory.store import MemoryStore
 app = typer.Typer()
 
 
-@app.command("remember")
-def memory_remember(
+@app.command("add")
+def memory_add(
     key: str = typer.Argument(..., help="Pattern key (e.g., 'api/workspace')"),
     value: str = typer.Argument(..., help="Pattern value/description"),
     tags: Optional[str] = typer.Option(None, "--tags", "-t", help="Comma-separated tags"),
     scope: Optional[str] = typer.Option(None, "--scope", "-s", help="Path scope (glob pattern)"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
 ) -> None:
-    """Store a pattern in memory."""
+    """Store a pattern in memory.
+
+    Example:
+        brief memory add "error-handling" "Use typer.echo for errors"
+        brief remember "api/auth" "Use JWT tokens" --tags auth,api
+    """
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
@@ -42,15 +47,21 @@ def memory_remember(
         typer.echo(f"  Scope: {scope}")
 
 
-@app.command("recall")
-def memory_recall(
-    query: Optional[str] = typer.Argument(None, help="Search query"),
+@app.command("get")
+def memory_get(
+    query: Optional[str] = typer.Argument(None, help="Search query or key"),
     tags: Optional[str] = typer.Option(None, "--tags", "-t", help="Filter by tags"),
     scope: Optional[str] = typer.Option(None, "--scope", "-s", help="Filter by scope"),
     file_path: Optional[str] = typer.Option(None, "--file", "-f", help="Get patterns for file"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
 ) -> None:
-    """Recall patterns from memory."""
+    """Get patterns from memory.
+
+    Example:
+        brief memory get                  # List all patterns
+        brief memory get "error"          # Search for patterns
+        brief recall --file src/api.py    # Get patterns for a file
+    """
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)

@@ -3,10 +3,10 @@ import typer
 from pathlib import Path
 from typing import Optional
 from ..config import get_brief_path, MANIFEST_FILE, load_exclude_patterns
-from ..reporting.overview import generate_project_overview, generate_module_overview
+from ..reporting.overview import generate_project_overview, generate_project_overview_rich, generate_module_overview
 from ..reporting.tree import generate_tree
 from ..reporting.deps import get_dependencies, format_dependencies, generate_dependency_graph
-from ..reporting.coverage import calculate_coverage, format_coverage, find_stale_files, format_stale
+from ..reporting.coverage import calculate_coverage, format_coverage, find_stale_files, format_stale, format_coverage_detailed
 from ..storage import read_json, read_jsonl
 
 app = typer.Typer()
@@ -16,20 +16,35 @@ app = typer.Typer()
 def overview(
     module: Optional[str] = typer.Argument(None, help="Module name for detailed overview"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+    plain: bool = typer.Option(False, "--plain", "-p", help="Plain text output (no colors)"),
 ) -> None:
-    """Show project or module overview."""
+    """Show project architecture overview.
+
+    Displays packages with their file counts, class counts, and key classes.
+    Use for a quick understanding of codebase structure.
+
+    Example:
+        brief overview           # Show all packages
+        brief overview src.brief # Show specific module details
+    """
+    from rich.console import Console
+
     brief_path = get_brief_path(base)
+    console = Console(force_terminal=not plain, no_color=plain)
 
     if not brief_path.exists():
-        typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
+        console.print("[red]Error:[/red] Brief not initialized. Run 'brief init' first.")
         raise typer.Exit(1)
 
     if module:
         output = generate_module_overview(brief_path, module)
+        typer.echo(output)
     else:
-        output = generate_project_overview(brief_path)
-
-    typer.echo(output)
+        if plain:
+            output = generate_project_overview(brief_path, use_rich=False)
+            typer.echo(output)
+        else:
+            generate_project_overview_rich(brief_path)
 
 
 @app.command()
@@ -89,6 +104,7 @@ def deps(
 def coverage_cmd(
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
     unparsed: bool = typer.Option(False, "--unparsed", "-u", help="List all unparsed files"),
+    detailed: bool = typer.Option(False, "--detailed", "-d", help="Show coverage by directory"),
 ) -> None:
     """Show analysis coverage statistics.
 
@@ -97,9 +113,17 @@ def coverage_cmd(
     - Documentation files
     - Other tracked files (unparsed)
 
+    Use --detailed to see breakdown by directory.
     Use --unparsed to see the full list of unparsed files.
+
+    Example:
+        brief coverage
+        brief coverage --detailed
     """
+    from rich.console import Console
+
     brief_path = get_brief_path(base)
+    console = Console()
 
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
@@ -108,8 +132,11 @@ def coverage_cmd(
     config = read_json(brief_path / "config.json")
     exclude_patterns = load_exclude_patterns(base, config)
 
-    cov = calculate_coverage(brief_path, base, exclude_patterns)
-    typer.echo(format_coverage(cov, show_unparsed=unparsed))
+    if detailed:
+        format_coverage_detailed(brief_path, base, exclude_patterns, console)
+    else:
+        cov = calculate_coverage(brief_path, base, exclude_patterns)
+        typer.echo(format_coverage(cov, show_unparsed=unparsed))
 
 
 @app.command()
