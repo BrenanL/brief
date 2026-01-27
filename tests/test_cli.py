@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 from typer.testing import CliRunner
 from brief.cli import app
-from brief.config import BRIEF_DIR, MANIFEST_FILE, CONTEXT_DIR
+from brief.config import BRIEF_DIR, MANIFEST_FILE, RELATIONSHIPS_FILE, CONTEXT_DIR
 
 
 runner = CliRunner()
@@ -79,3 +79,76 @@ class TestCLIHelp:
 
         assert result.exit_code == 0
         assert "Initialize" in result.stdout
+
+    def test_reset_help(self) -> None:
+        """Test that reset help displays."""
+        result = runner.invoke(app, ["reset", "--help"])
+
+        assert result.exit_code == 0
+        assert "Clear Brief analysis cache" in result.stdout
+
+
+class TestResetCommand:
+    """Tests for the reset command."""
+
+    def test_reset_clears_analysis_cache(self) -> None:
+        """Test that reset clears manifest and relationships."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Initialize
+            runner.invoke(app, ["init", tmpdir])
+            brief_path = Path(tmpdir) / BRIEF_DIR
+
+            # Add some data to manifest
+            manifest = brief_path / MANIFEST_FILE
+            manifest.write_text('{"test": "data"}\n')
+
+            relationships = brief_path / RELATIONSHIPS_FILE
+            relationships.write_text('{"test": "rel"}\n')
+
+            # Add an LLM description that should be preserved
+            files_dir = brief_path / CONTEXT_DIR / "files"
+            desc_file = files_dir / "test.md"
+            desc_file.write_text("# Test description")
+
+            # Run reset
+            result = runner.invoke(app, ["reset", "-b", tmpdir])
+
+            assert result.exit_code == 0
+            assert "Reset complete" in result.stdout
+
+            # Manifest and relationships should be empty
+            assert manifest.read_text().strip() == ""
+            assert relationships.read_text().strip() == ""
+
+            # Description should still exist
+            assert desc_file.exists()
+            assert desc_file.read_text() == "# Test description"
+
+    def test_reset_full_clears_llm_content(self) -> None:
+        """Test that reset --full clears LLM content with confirmation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Initialize
+            runner.invoke(app, ["init", tmpdir])
+            brief_path = Path(tmpdir) / BRIEF_DIR
+
+            # Add an LLM description
+            files_dir = brief_path / CONTEXT_DIR / "files"
+            desc_file = files_dir / "test.md"
+            desc_file.write_text("# Test description")
+
+            # Run reset --full with -y to skip confirmation
+            result = runner.invoke(app, ["reset", "-b", tmpdir, "--full", "-y"])
+
+            assert result.exit_code == 0
+            assert "Reset complete" in result.stdout
+
+            # Description should be deleted
+            assert not desc_file.exists()
+
+    def test_reset_fails_without_brief(self) -> None:
+        """Test that reset fails if Brief not initialized."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.invoke(app, ["reset", "-b", tmpdir])
+
+            assert result.exit_code == 1
+            assert "not initialized" in result.output

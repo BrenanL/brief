@@ -16,7 +16,14 @@ def analyze_file(
     file_path: Path = typer.Argument(..., help="Python file to analyze"),
     base: Optional[Path] = typer.Option(None, "--base", "-b", help="Base path for module resolution"),
 ) -> None:
-    """Analyze a single Python file."""
+    """Analyze a single Python file.
+
+    Extracts classes, functions, and their relationships from a Python file
+    and adds them to the Brief manifest.
+
+    Example:
+        brief analyze file src/utils.py
+    """
     if not file_path.exists():
         typer.echo(f"Error: File not found: {file_path}", err=True)
         raise typer.Exit(1)
@@ -42,7 +49,15 @@ def analyze_directory(
     all_files: bool = typer.Option(False, "--all", "-a", help="Analyze all files (ignore previous analysis)"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path where .brief is located"),
 ) -> None:
-    """Analyze Python files in a directory."""
+    """Analyze Python files in a directory.
+
+    Scans the directory for Python files, extracts their structure (classes,
+    functions), and builds import/call relationship graphs.
+
+    Example:
+        brief analyze dir src/
+        brief analyze dir . --all
+    """
     if not directory.exists():
         typer.echo(f"Error: Directory not found: {directory}", err=True)
         raise typer.Exit(1)
@@ -97,7 +112,16 @@ def analyze_directory(
 def analyze_all(
     base: Path = typer.Argument(Path("."), help="Base path to analyze"),
 ) -> None:
-    """Analyze entire repository."""
+    """Analyze entire repository.
+
+    Full analysis of all Python files in the project. Use this for initial
+    setup or when you want to rebuild the entire manifest.
+
+    Equivalent to: brief analyze dir . --all
+
+    Example:
+        brief analyze all
+    """
     analyze_directory(directory=base, all_files=True, base=base)
 
 
@@ -105,7 +129,14 @@ def analyze_all(
 def refresh(
     base: Path = typer.Argument(Path("."), help="Base path"),
 ) -> None:
-    """Re-analyze only changed files."""
+    """Re-analyze only changed files.
+
+    Detects files that have been added, modified, or deleted since the last
+    analysis and updates the manifest accordingly. Faster than full analysis.
+
+    Example:
+        brief analyze refresh
+    """
     brief_path = get_brief_path(base)
 
     if not brief_path.exists():

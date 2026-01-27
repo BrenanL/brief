@@ -3,10 +3,29 @@ import typer
 from pathlib import Path
 from typing import Optional
 from ..config import get_brief_path
+from ..storage import read_json
 from ..tasks.manager import TaskManager
 from ..models import TaskStatus, TaskStepStatus
 
 app = typer.Typer()
+
+
+def _check_tasks_enabled(brief_path: Path) -> bool:
+    """Check if the task system is enabled in config.
+
+    Returns True if enabled, False if disabled. Shows warning when disabled.
+    """
+    if not brief_path.exists():
+        return True  # Let individual commands handle "not initialized" error
+
+    config = read_json(brief_path / "config.json")
+    if not config.get("enable_tasks", True):
+        typer.echo("Task system is disabled in config.", err=True)
+        typer.echo("To enable: brief config set enable_tasks true", err=True)
+        typer.echo("", err=True)
+        typer.echo("This allows using external task tools (e.g., beads) instead.", err=True)
+        return False
+    return True
 
 
 @app.command("list")
@@ -15,10 +34,21 @@ def task_list(
     tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
 ) -> None:
-    """List all tasks."""
+    """List all tasks.
+
+    Shows task status, priority, and dependencies. Active task is marked with *.
+
+    Example:
+        brief task list
+        brief task list --status pending
+        brief task list --tag bug
+    """
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)
@@ -64,10 +94,16 @@ def task_list(
 def task_ready(
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
 ) -> None:
-    """Show tasks ready to work on (no blockers)."""
+    """Show tasks ready to work on (no blockers).
+
+    Lists pending tasks that have no unmet dependencies.
+    """
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)
@@ -94,10 +130,19 @@ def task_create(
     depends: Optional[str] = typer.Option(None, "--depends", help="Comma-separated dependency IDs"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
 ) -> None:
-    """Create a new task."""
+    """Create a new task.
+
+    Example:
+        brief task create "Fix login bug"
+        brief task create "Add caching" -d "Implement Redis caching" -p 80
+        brief task create "Write tests" --depends ag-1234
+    """
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)
@@ -136,6 +181,9 @@ def task_start(
         typer.echo("Error: Brief not initialized.", err=True)
         raise typer.Exit(1)
 
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
     manager = TaskManager(brief_path)
 
     task = manager.start_task(task_id)
@@ -167,6 +215,9 @@ def task_done(
         typer.echo("Error: Brief not initialized.", err=True)
         raise typer.Exit(1)
 
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
     manager = TaskManager(brief_path)
 
     task = manager.complete_task(task_id)
@@ -189,6 +240,9 @@ def task_note(
         typer.echo("Error: Brief not initialized.", err=True)
         raise typer.Exit(1)
 
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
     manager = TaskManager(brief_path)
 
     task = manager.add_note(task_id, note)
@@ -208,6 +262,9 @@ def task_show(
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)
@@ -280,6 +337,9 @@ def task_delete(
         typer.echo("Error: Brief not initialized.", err=True)
         raise typer.Exit(1)
 
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
     manager = TaskManager(brief_path)
 
     task = manager.get_task(task_id)
@@ -307,6 +367,9 @@ def task_blocked(
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)
@@ -339,6 +402,9 @@ def task_steps(
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)
@@ -381,6 +447,9 @@ def task_step_done(
         typer.echo("Error: Brief not initialized.", err=True)
         raise typer.Exit(1)
 
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
     manager = TaskManager(brief_path)
 
     # Use active task if no task_id provided
@@ -419,6 +488,9 @@ def task_active(
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
         raise typer.Exit(1)
 
     manager = TaskManager(brief_path)

@@ -2,7 +2,8 @@
 import typer
 from pathlib import Path
 from typing import Optional
-from ..config import get_brief_path
+from ..config import get_brief_path, MANIFEST_FILE
+from ..storage import read_json, read_jsonl
 from ..retrieval.context import (
     build_context_for_file,
     build_context_for_query,
@@ -15,6 +16,44 @@ from ..tasks.manager import TaskManager
 app = typer.Typer()
 
 
+def _check_manifest_has_files(brief_path: Path) -> bool:
+    """Check if the manifest has any file records.
+
+    Args:
+        brief_path: Path to .brief directory
+
+    Returns:
+        True if manifest has file records, False otherwise
+    """
+    manifest_file = brief_path / MANIFEST_FILE
+    if not manifest_file.exists():
+        return False
+
+    for record in read_jsonl(manifest_file):
+        if record.get("type") == "file":
+            return True
+    return False
+
+
+def _get_auto_generate_default(brief_path: Path) -> bool:
+    """Get the default auto-generate setting from config.
+
+    Args:
+        brief_path: Path to .brief directory
+
+    Returns:
+        True if auto-generation should be enabled by default
+    """
+    config_file = brief_path / "config.json"
+    if config_file.exists():
+        try:
+            config = read_json(config_file)
+            return config.get("auto_generate_descriptions", True)
+        except Exception:
+            pass
+    return True  # Default to enabled
+
+
 @app.command("get")
 def context_get(
     query: Optional[str] = typer.Argument(None, help="Task description or file path"),
@@ -25,7 +64,11 @@ def context_get(
     patterns: bool = typer.Option(True, "--patterns/--no-patterns", help="Include memory patterns"),
     contracts: bool = typer.Option(True, "--contracts/--no-contracts", help="Include contracts"),
     paths: bool = typer.Option(True, "--paths/--no-paths", help="Include execution paths"),
-    auto_generate: bool = typer.Option(False, "--auto-generate", "-g", help="Generate descriptions on-demand if missing"),
+    auto_generate: Optional[bool] = typer.Option(None, "--auto-generate", "-g", help="Generate descriptions on-demand (default: from config)"),
+    no_auto_generate: bool = typer.Option(False, "--no-auto-generate", "-G", help="Disable auto-generation even if config enables it"),
+    show_signatures: bool = typer.Option(False, "--show-signatures", "-s", help="Force showing signatures even when descriptions exist"),
+    compact: bool = typer.Option(False, "--compact", "-c", help="Show compact summary (file list and stats only)"),
+    tokens: bool = typer.Option(False, "--tokens", help="Show estimated token count"),
 ) -> None:
     """Get relevant context for a task or file.
 
@@ -42,14 +85,37 @@ def context_get(
     Or provide a query directly:
         brief context get "refactoring the table command"
 
-    Use --auto-generate to generate descriptions on-demand for files that don't have them:
-        brief context get "task management" --auto-generate
+    Use --compact for a quick summary without full descriptions:
+        brief context get "auth" --compact
+
+    Auto-generation is enabled by default (configurable in config.json).
+    Use -G/--no-auto-generate to disable:
+        brief context get "task management" -G
     """
     brief_path = get_brief_path(base)
 
     if not brief_path.exists():
-        typer.echo("Error: Brief not initialized.", err=True)
+        typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
+
+    # Check if manifest has any files
+    if not _check_manifest_has_files(brief_path):
+        typer.echo("Error: No files in manifest. Run 'brief analyze all' first.", err=True)
+        typer.echo("", err=True)
+        typer.echo("Quick start:", err=True)
+        typer.echo("  brief analyze all    # Analyze your codebase", err=True)
+        typer.echo("  brief describe batch # Generate descriptions (optional)", err=True)
+        typer.echo("  brief context get \"your query\"", err=True)
+        raise typer.Exit(1)
+
+    # Determine auto-generate setting
+    # Priority: -G flag > -g flag > config > default (True)
+    if no_auto_generate:
+        should_auto_generate = False
+    elif auto_generate is not None:
+        should_auto_generate = auto_generate
+    else:
+        should_auto_generate = _get_auto_generate_default(brief_path)
 
     # Handle task-based context
     if task:
@@ -76,7 +142,7 @@ def context_get(
         # File mode
         package = build_context_for_file(
             brief_path, query, base_path=base,
-            auto_generate_descriptions=auto_generate
+            auto_generate_descriptions=should_auto_generate
         )
     else:
         # Query mode with search
@@ -91,16 +157,32 @@ def context_get(
             include_contracts=contracts,
             include_paths=paths,
             include_patterns=patterns,
-            auto_generate_descriptions=auto_generate
+            auto_generate_descriptions=should_auto_generate
         )
 
-    markdown = package.to_markdown()
+    markdown = package.to_markdown(force_signatures=show_signatures, compact=compact)
 
     if output:
         output.write_text(markdown)
         typer.echo(f"Context written to {output}")
     else:
         typer.echo(markdown)
+
+    # Show token estimate if requested
+    if tokens:
+        estimates = package.estimate_tokens()
+        typer.echo("")
+        typer.echo("Token Estimates (approximate):")
+        typer.echo(f"  Primary files:   ~{estimates['primary_files']:,}")
+        typer.echo(f"  Related files:   ~{estimates['related_files']:,}")
+        typer.echo(f"  Patterns:        ~{estimates['patterns']:,}")
+        typer.echo(f"  Execution paths: ~{estimates['execution_paths']:,}")
+        typer.echo(f"  Contracts:       ~{estimates['contracts']:,}")
+        typer.echo(f"  ─────────────────────")
+        typer.echo(f"  Content subtotal: ~{estimates['content_subtotal']:,}")
+        typer.echo(f"  Formatted output: ~{estimates['formatted_output']:,}")
+        typer.echo(f"  ─────────────────────")
+        typer.echo(f"  Total (output):   ~{estimates['total']:,} tokens")
 
 
 @app.command("related")
@@ -169,7 +251,11 @@ def context_search(
     brief_path = get_brief_path(base)
 
     if not brief_path.exists():
-        typer.echo("Error: Brief not initialized.", err=True)
+        typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_manifest_has_files(brief_path):
+        typer.echo("Error: No files in manifest. Run 'brief analyze all' first.", err=True)
         raise typer.Exit(1)
 
     results: list[dict] = []
@@ -201,8 +287,25 @@ def context_search(
 def context_embed(
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
 ) -> None:
-    """Generate embeddings for all descriptions."""
+    """Generate embeddings for semantic search.
+
+    Embeddings enable semantic similarity search over file descriptions.
+    This converts your LLM-generated descriptions into vector embeddings
+    that can be searched using natural language queries.
+
+    Prerequisites:
+    1. Run 'brief describe batch' first to generate descriptions
+    2. Set OPENAI_API_KEY in .env (embeddings use OpenAI's API)
+
+    After running this command, you can use:
+        brief context search "query" --mode semantic
+        brief context search "query" --mode hybrid
+
+    Example:
+        brief context embed    # Generate embeddings for all descriptions
+    """
     from ..retrieval.embeddings import embed_all_descriptions
+    from ..config import CONTEXT_DIR
 
     brief_path = get_brief_path(base)
 
@@ -210,10 +313,28 @@ def context_embed(
         typer.echo("Error: Brief not initialized.", err=True)
         raise typer.Exit(1)
 
-    if not is_embedding_api_available():
-        typer.echo("Error: Embedding requires OPENAI_API_KEY in .env", err=True)
+    # Check if descriptions exist
+    files_dir = brief_path / CONTEXT_DIR / "files"
+    if not files_dir.exists() or not any(files_dir.glob("*.md")):
+        typer.echo("No descriptions found. Run 'brief describe batch' first.", err=True)
         raise typer.Exit(1)
 
-    typer.echo("Generating embeddings for all descriptions...")
+    if not is_embedding_api_available():
+        typer.echo("Error: Embedding requires OPENAI_API_KEY in .env", err=True)
+        typer.echo("", err=True)
+        typer.echo("To set up:", err=True)
+        typer.echo("  1. Get an API key from platform.openai.com", err=True)
+        typer.echo("  2. Add to .env: OPENAI_API_KEY=sk-...", err=True)
+        raise typer.Exit(1)
+
+    desc_count = len(list(files_dir.glob("*.md")))
+    typer.echo(f"Generating embeddings for {desc_count} descriptions...")
+    typer.echo("(This may take a moment)")
+
     count = embed_all_descriptions(brief_path)
+
+    typer.echo("")
     typer.echo(f"Embedded {count} file descriptions.")
+    typer.echo("")
+    typer.echo("You can now use semantic search:")
+    typer.echo("  brief context search \"your query\" --mode semantic")

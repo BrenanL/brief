@@ -34,37 +34,81 @@ def load_gitignore_patterns(base_path: Path) -> list[str]:
 @app.command("show")
 def config_show(
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+    plain: bool = typer.Option(False, "--plain", "-p", help="Plain text output"),
 ) -> None:
-    """Show current configuration."""
+    """Show current configuration.
+
+    Displays all configuration values and marks which are defaults vs custom.
+
+    Example:
+        brief config show
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich import box
+
     brief_path = get_brief_path(base)
+    console = Console(force_terminal=not plain, no_color=plain)
 
     if not brief_path.exists():
-        typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
+        console.print("[red]Error:[/red] Brief not initialized. Run 'brief init' first.")
         raise typer.Exit(1)
 
     config = read_json(brief_path / "config.json")
+    defaults = BriefConfig()
 
-    typer.echo("Brief Configuration:")
-    typer.echo("=" * 40)
-    typer.echo(f"Version: {config.get('version', 'unknown')}")
-    typer.echo(f"Default model: {config.get('default_model', 'not set')}")
-    typer.echo(f"Auto analyze: {config.get('auto_analyze', False)}")
-    typer.echo(f"Use gitignore: {config.get('use_gitignore', False)}")
-    typer.echo("")
-    typer.echo("Exclude patterns:")
-    for pattern in config.get("exclude_patterns", []):
-        typer.echo(f"  - {pattern}")
+    # Display config file location
+    config_file = brief_path / "config.json"
+    console.print(f"[dim]Config file: {config_file}[/dim]")
+    console.print()
+
+    # Create table for settings
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value")
+    table.add_column("Status", justify="center")
+
+    # Core settings
+    settings = [
+        ("version", config.get("version"), defaults.version),
+        ("default_model", config.get("default_model"), defaults.default_model),
+        ("auto_analyze", config.get("auto_analyze"), defaults.auto_analyze),
+        ("use_gitignore", config.get("use_gitignore"), defaults.use_gitignore),
+        ("command_logging", config.get("command_logging"), defaults.command_logging),
+        ("auto_generate_descriptions", config.get("auto_generate_descriptions"), defaults.auto_generate_descriptions),
+        ("enable_tasks", config.get("enable_tasks"), defaults.enable_tasks),
+        ("llm_provider", config.get("llm_provider"), defaults.llm_provider),
+    ]
+
+    for name, value, default in settings:
+        value_str = str(value) if value is not None else str(default)
+        if value == default or value is None:
+            status = "[dim]default[/dim]"
+        else:
+            status = "[green]custom[/green]"
+        table.add_row(name, value_str, status)
+
+    console.print(table)
+
+    # Exclude patterns
+    console.print()
+    exclude = config.get("exclude_patterns", defaults.exclude_patterns)
+    console.print(f"[bold]Exclude patterns[/bold] ({len(exclude)}):")
+    for pattern in exclude[:8]:
+        console.print(f"  [dim]-[/dim] {pattern}")
+    if len(exclude) > 8:
+        console.print(f"  [dim]... and {len(exclude) - 8} more[/dim]")
 
     # Show effective gitignore patterns if enabled
-    if config.get("use_gitignore", False):
+    if config.get("use_gitignore", defaults.use_gitignore):
         gitignore_patterns = load_gitignore_patterns(base)
         if gitignore_patterns:
-            typer.echo("")
-            typer.echo(f"Gitignore patterns ({len(gitignore_patterns)} from .gitignore):")
-            for pattern in gitignore_patterns[:10]:
-                typer.echo(f"  - {pattern}")
-            if len(gitignore_patterns) > 10:
-                typer.echo(f"  ... and {len(gitignore_patterns) - 10} more")
+            console.print()
+            console.print(f"[bold]Gitignore patterns[/bold] ({len(gitignore_patterns)} from .gitignore):")
+            for pattern in gitignore_patterns[:5]:
+                console.print(f"  [dim]-[/dim] {pattern}")
+            if len(gitignore_patterns) > 5:
+                console.print(f"  [dim]... and {len(gitignore_patterns) - 5} more[/dim]")
 
 
 @app.command("reset")

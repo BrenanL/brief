@@ -7,90 +7,171 @@ from ..config import get_brief_path, MANIFEST_FILE, RELATIONSHIPS_FILE, CONTEXT_
 
 
 def get_module_structure(brief_path: Path) -> dict[str, dict[str, list[dict[str, Any]]]]:
-    """Build module structure from manifest."""
+    """Build module structure from manifest.
+
+    Groups records by Python package (directory with __init__.py or containing .py files).
+    Only includes actual Python modules, not scripts or config files.
+    """
     modules: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
         lambda: {"files": [], "classes": [], "functions": []}
     )
 
     for record in read_jsonl(brief_path / MANIFEST_FILE):
         if record["type"] == "file":
-            module = record.get("module", "root")
+            # Only include Python files
+            if not record.get("path", "").endswith(".py"):
+                continue
+
+            module = record.get("module", "")
+            if not module:
+                # Extract module from path for Python files
+                path = record.get("path", "")
+                if "/" in path or "\\" in path:
+                    # Get directory part
+                    parts = path.replace("\\", "/").split("/")
+                    # Remove filename
+                    parts = parts[:-1]
+                    module = ".".join(parts) if parts else "root"
+                else:
+                    module = "root"
+
             modules[module]["files"].append(record)
+
         elif record["type"] == "class":
             # Extract module from file path
-            parts = record["file"].replace("/", ".").replace("\\", ".")
-            if parts.endswith(".py"):
-                parts = parts[:-3]
-            module = parts.rsplit(".", 1)[0] if "." in parts else "root"
+            file_path = record.get("file", "")
+            if not file_path.endswith(".py"):
+                continue
+
+            parts = file_path.replace("\\", "/").split("/")
+            parts = parts[:-1]  # Remove filename
+            module = ".".join(parts) if parts else "root"
             modules[module]["classes"].append(record)
+
         elif record["type"] == "function":
-            parts = record["file"].replace("/", ".").replace("\\", ".")
-            if parts.endswith(".py"):
-                parts = parts[:-3]
-            module = parts.rsplit(".", 1)[0] if "." in parts else "root"
+            file_path = record.get("file", "")
+            if not file_path.endswith(".py"):
+                continue
+
+            parts = file_path.replace("\\", "/").split("/")
+            parts = parts[:-1]
+            module = ".".join(parts) if parts else "root"
             modules[module]["functions"].append(record)
 
     return dict(modules)
 
 
-def generate_project_overview(brief_path: Path) -> str:
-    """Generate project-level overview text."""
-    modules = get_module_structure(brief_path)
+def generate_project_overview_rich(brief_path: Path) -> None:
+    """Generate project-level overview with rich formatting (prints directly)."""
+    from rich.console import Console
+    from rich.table import Table
+    from rich import box
 
-    # Count totals
+    modules = get_module_structure(brief_path)
+    console = Console()
+
+    if not modules:
+        console.print("No Python modules found. Run 'brief analyze all' first.")
+        return
+
+    # Sort modules: src modules first, then others
+    def module_sort_key(name: str) -> tuple[int, str]:
+        if name.startswith("src"):
+            return (0, name)
+        elif name == "root":
+            return (2, name)
+        elif name.startswith("tests"):
+            return (3, name)
+        return (1, name)
+
+    sorted_modules = sorted(modules.keys(), key=module_sort_key)
+
+    console.print("[bold]Project Architecture[/bold]")
+    console.print()
+
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Package", style="cyan")
+    table.add_column("Files", justify="right")
+    table.add_column("Classes", justify="right")
+    table.add_column("Functions", justify="right")
+    table.add_column("Key Classes", max_width=40)
+
+    for module_name in sorted_modules:
+        data = modules[module_name]
+        file_count = len(data['files'])
+        class_count = len(data['classes'])
+        func_count = len(data['functions'])
+
+        # Get top class names
+        class_names = [c['name'] for c in data['classes'][:3]]
+        if len(data['classes']) > 3:
+            class_names.append(f"+{len(data['classes']) - 3}")
+        class_str = ", ".join(class_names) if class_names else "-"
+
+        # Format module name for display
+        display_name = module_name if module_name else "(root)"
+        if display_name.startswith("src.brief"):
+            display_name = display_name.replace("src.brief", "brief")
+
+        table.add_row(
+            display_name,
+            str(file_count),
+            str(class_count),
+            str(func_count),
+            class_str
+        )
+
+    console.print(table)
+
+    # Summary
     total_files = sum(len(m["files"]) for m in modules.values())
     total_classes = sum(len(m["classes"]) for m in modules.values())
     total_functions = sum(len(m["functions"]) for m in modules.values())
 
-    # Count relationships
-    relationships = list(read_jsonl(brief_path / RELATIONSHIPS_FILE))
-    import_count = len([r for r in relationships if r.get("type") == "imports"])
+    console.print()
+    console.print(f"[dim]Total: {len(modules)} packages, {total_files} files, {total_classes} classes, {total_functions} functions[/dim]")
 
-    # Check for context files
-    context_path = brief_path / CONTEXT_DIR
-    has_project_context = (context_path / "project.md").exists()
-    module_contexts = len(list((context_path / "modules").glob("*.md"))) if (context_path / "modules").exists() else 0
-    file_contexts = len(list((context_path / "files").glob("*.md"))) if (context_path / "files").exists() else 0
 
-    lines = [
-        "=" * 60,
-        "PROJECT OVERVIEW",
-        "=" * 60,
-        "",
-        f"Total Files Analyzed: {total_files}",
-        f"Total Classes: {total_classes}",
-        f"Total Functions: {total_functions}",
-        f"Import Relationships: {import_count}",
-        "",
-        "Context Coverage:",
-        f"  Project description: {'Yes' if has_project_context else 'No'}",
-        f"  Module descriptions: {module_contexts}",
-        f"  File descriptions: {file_contexts}",
-        "",
-        "=" * 60,
-        "MODULES",
-        "=" * 60,
-    ]
+def generate_project_overview(brief_path: Path, use_rich: bool = True) -> str:
+    """Generate project-level overview text.
 
-    # Sort modules for consistent output
-    for module_name in sorted(modules.keys()):
-        data = modules[module_name]
-        lines.append("")
-        lines.append(f"  {module_name}/")
-        lines.append(f"    Files: {len(data['files'])}")
-        lines.append(f"    Classes: {len(data['classes'])}")
-        lines.append(f"    Functions: {len(data['functions'])}")
+    Shows the high-level architecture: main packages and their key components.
+    """
+    modules = get_module_structure(brief_path)
 
-        # List top-level classes
-        if data['classes']:
-            class_names = [c['name'] for c in data['classes'][:5]]
-            more = len(data['classes']) - 5
-            class_str = ", ".join(class_names)
-            if more > 0:
-                class_str += f", +{more} more"
-            lines.append(f"    Classes: {class_str}")
+    if not modules:
+        return "No Python modules found. Run 'brief analyze all' first."
 
-    return "\n".join(lines)
+    # Sort modules: src modules first, then others
+    def module_sort_key(name: str) -> tuple[int, str]:
+        if name.startswith("src"):
+            return (0, name)
+        elif name == "root":
+            return (2, name)
+        elif name.startswith("tests"):
+            return (3, name)
+        return (1, name)
+
+    sorted_modules = sorted(modules.keys(), key=module_sort_key)
+
+    if use_rich:
+        generate_project_overview_rich(brief_path)
+        return ""  # Rich output is printed directly
+    else:
+        # Plain text fallback
+        lines = ["Project Architecture", "=" * 50, ""]
+
+        for module_name in sorted_modules:
+            data = modules[module_name]
+            class_names = [c['name'] for c in data['classes'][:3]]
+            class_str = ", ".join(class_names) if class_names else "(none)"
+
+            lines.append(f"{module_name or '(root)'}")
+            lines.append(f"  Files: {len(data['files'])}  Classes: {len(data['classes'])}  Functions: {len(data['functions'])}")
+            lines.append(f"  Key: {class_str}")
+            lines.append("")
+
+        return "\n".join(lines)
 
 
 def generate_module_overview(brief_path: Path, module_name: str) -> str:

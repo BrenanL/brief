@@ -203,6 +203,10 @@ class BriefConfig(BaseModel):
     default_model: str = "gpt-5-mini"
     auto_analyze: bool = False
     use_gitignore: bool = True  # Use .gitignore patterns in addition to exclude_patterns
+    command_logging: bool = True  # Log command invocations to .brief-logs/
+    auto_generate_descriptions: bool = True  # Auto-generate descriptions when missing
+    enable_tasks: bool = True  # Enable built-in task management (disable to use external tools)
+    llm_provider: str = "openai"  # LLM provider: openai, anthropic, or google (edit baml_src/clients.baml to change)
     exclude_patterns: list[str] = Field(default_factory=lambda: [
         ".*",              # All dot-prefixed folders (.git, .venv, .claude, etc.)
         "__pycache__",

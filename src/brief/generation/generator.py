@@ -213,13 +213,42 @@ def _generate_placeholder_file_description(
     class_names: list[str],
     function_names: list[str]
 ) -> FileDescription:
-    """Generate placeholder file description from analysis."""
+    """Generate placeholder file description from analysis.
+
+    Note: This produces a signature-based summary when LLM is unavailable.
+    The output is still useful as it shows the actual structure of the file.
+    """
+    # Build informative content description
+    contents_parts = []
+    if class_names:
+        class_list = ', '.join(class_names[:10])
+        if len(class_names) > 10:
+            class_list += f" (+{len(class_names) - 10} more)"
+        contents_parts.append(f"It defines the class{'es' if len(class_names) > 1 else ''} '{class_list}'")
+    if function_names:
+        func_list = ', '.join(function_names[:10])
+        if len(function_names) > 10:
+            func_list += f" (+{len(function_names) - 10} more)"
+        contents_parts.append(f"{'and ' if class_names else 'It defines '}functions {func_list}")
+
+    contents = ' '.join(contents_parts) if contents_parts else "This file contains implementation code."
+
+    # Generate a more descriptive purpose
+    if class_names and function_names:
+        purpose = f"This file provides {len(class_names)} class{'es' if len(class_names) > 1 else ''} and {len(function_names)} function{'s' if len(function_names) > 1 else ''} for {record.module} functionality."
+    elif class_names:
+        purpose = f"This file provides the {', '.join(class_names[:3])} class{'es' if len(class_names) > 1 else ''} for {record.module}."
+    elif function_names:
+        purpose = f"This file provides utility functions for {record.module}."
+    else:
+        purpose = f"This file is part of the {record.module} module."
+
     return FileDescription(
-        purpose=f"Contains {record.module} implementation",
-        contents=f"Classes: {', '.join(class_names) or 'none'}. Functions: {', '.join(function_names) or 'none'}",
-        role=f"Part of the {record.module} module",
-        dependencies="See imports in file",
-        exports=", ".join(class_names + function_names) or "See file contents"
+        purpose=purpose,
+        contents=contents,
+        role=f"This file serves as a {'core' if class_names else 'utility'} component {'in' if record.module else 'of'} {record.module or 'the project'}.",
+        dependencies="It depends on imports listed in the file header.",
+        exports=f"Other code should import {', '.join(class_names[:3] + function_names[:3]) or 'the contents of this file'}."
     )
 
 

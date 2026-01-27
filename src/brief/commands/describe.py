@@ -218,6 +218,46 @@ def describe_module_cmd(
         raise typer.Exit(1)
 
 
+def _file_priority(file_path: str) -> tuple[int, str]:
+    """Get priority for a file path (lower = higher priority).
+
+    Prioritizes source directories over test directories.
+
+    Args:
+        file_path: The file path to get priority for
+
+    Returns:
+        Tuple of (priority_level, file_path) for sorting
+    """
+    # Priority levels (lower = higher priority)
+    # 0: Main source directories
+    # 1: Other source-like directories
+    # 2: Root-level files
+    # 3: Test directories
+    # 4: Everything else
+
+    path_lower = file_path.lower()
+
+    # High priority: main source directories
+    if path_lower.startswith(("src/", "lib/", "app/", "core/")):
+        return (0, file_path)
+
+    # Medium-high priority: common source patterns
+    if any(path_lower.startswith(p) for p in ("api/", "services/", "models/", "utils/", "common/")):
+        return (1, file_path)
+
+    # Medium priority: root-level Python files (often important)
+    if "/" not in file_path and file_path.endswith(".py"):
+        return (2, file_path)
+
+    # Low priority: test directories
+    if path_lower.startswith(("tests/", "test/", "testing/")) or "/tests/" in path_lower:
+        return (3, file_path)
+
+    # Default priority
+    return (4, file_path)
+
+
 @app.command("batch")
 def describe_batch(
     path_filter: Optional[str] = typer.Option(None, "--filter", "-f", help="Filter files by path pattern"),
@@ -225,12 +265,24 @@ def describe_batch(
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
     skip_existing: bool = typer.Option(True, "--skip-existing/--include-existing", help="Skip already described files"),
     include_other: bool = typer.Option(False, "--include-other", "-a", help="Include non-Python files (scripts, configs, etc.)"),
+    embed: bool = typer.Option(False, "--embed", "-e", help="Generate embeddings after descriptions (enables semantic search)"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed BAML output"),
 ) -> None:
     """Generate descriptions for multiple files.
 
     By default, only describes Python files. Use --include-other to also
     describe scripts, configs, and other tracked files.
+
+    Files are processed in priority order: source directories (src/, lib/, app/)
+    are processed before test directories.
+
+    Use --embed to automatically generate embeddings for semantic search
+    after descriptions are generated (requires OPENAI_API_KEY).
+
+    Example:
+        brief describe batch                    # Describe up to 10 files
+        brief describe batch --limit 50         # Describe up to 50 files
+        brief describe batch --embed            # Describe and embed
     """
     set_baml_log_level(verbose)
 
@@ -240,7 +292,7 @@ def describe_batch(
         raise typer.Exit(1)
 
     # Collect files to describe
-    files_to_describe: list[str] = []
+    candidate_files: list[str] = []
     context_files_dir = brief_path / CONTEXT_DIR / "files"
 
     for record in read_jsonl(brief_path / MANIFEST_FILE):
@@ -264,10 +316,13 @@ def describe_batch(
             if (context_files_dir / desc_filename).exists():
                 continue
 
-        files_to_describe.append(record["path"])
+        candidate_files.append(record["path"])
 
-        if len(files_to_describe) >= limit:
-            break
+    # Sort by priority (source files first, test files last)
+    candidate_files.sort(key=_file_priority)
+
+    # Apply limit after sorting
+    files_to_describe = candidate_files[:limit]
 
     if not files_to_describe:
         typer.echo("No files to describe.")
@@ -283,6 +338,20 @@ def describe_batch(
             typer.echo(f"  Error: {e}")
 
     typer.echo("Done.")
+
+    # Generate embeddings if requested
+    if embed:
+        from ..retrieval.embeddings import is_embedding_api_available, embed_all_descriptions
+
+        typer.echo("")
+        if not is_embedding_api_available():
+            typer.echo("Skipping embeddings: OPENAI_API_KEY not set in .env")
+            typer.echo("To enable semantic search later, set the key and run:")
+            typer.echo("  brief context embed")
+        else:
+            typer.echo("Generating embeddings...")
+            count = embed_all_descriptions(brief_path)
+            typer.echo(f"Embedded {count} descriptions. Semantic search is now available.")
 
 
 @app.command("spec")

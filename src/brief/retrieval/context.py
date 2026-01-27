@@ -86,15 +86,22 @@ class ContextPackage:
     execution_paths: list[dict[str, str]] = field(default_factory=list)  # {name, flow}
     contracts: list[str] = field(default_factory=list)
 
-    def to_markdown(self, include_signatures: bool = True) -> str:
+    def to_markdown(self, include_signatures: bool = True, force_signatures: bool = False, compact: bool = False) -> str:
         """Convert to markdown for display/consumption.
 
         Args:
-            include_signatures: Whether to include function/class signatures (default True)
+            include_signatures: Whether to include function/class signatures when
+                               no description exists (default True)
+            force_signatures: Force showing signatures even when description exists
+                             (default False)
+            compact: Show compact summary (file list and stats only, no descriptions)
 
         Returns:
             Markdown-formatted string
         """
+        if compact:
+            return self._to_markdown_compact()
+
         lines = [
             f"# Context for: {self.query}",
             "",
@@ -119,11 +126,17 @@ class ContextPackage:
                 else:
                     # Code file rendering
                     lines.append(f"### {f['path']}")
-                    if f.get('description'):
+                    has_description = bool(f.get('description'))
+
+                    if has_description:
                         lines.append(f.get('description'))
 
-                    # Include class and function signatures
-                    if include_signatures:
+                    # Show signatures if:
+                    # - force_signatures is True, OR
+                    # - no description exists AND include_signatures is True
+                    should_show_signatures = force_signatures or (not has_description and include_signatures)
+
+                    if should_show_signatures:
                         classes = f.get('classes', [])
                         functions = f.get('functions', [])
 
@@ -175,6 +188,135 @@ class ContextPackage:
             lines.append("")
 
         return "\n".join(lines)
+
+    def _to_markdown_compact(self) -> str:
+        """Generate compact summary format."""
+        lines = [
+            f"# Context for: {self.query}",
+            "",
+        ]
+
+        # Stats summary
+        total_classes = sum(len(f.get('classes', [])) for f in self.primary_files)
+        total_functions = sum(len(f.get('functions', [])) for f in self.primary_files)
+
+        lines.append(f"**Summary**: {len(self.primary_files)} primary files, {len(self.related_files)} related files")
+        lines.append(f"**Contains**: {total_classes} classes, {total_functions} functions")
+        lines.append("")
+
+        # Primary files - just paths with one-line summary
+        if self.primary_files:
+            lines.append("## Primary Files")
+            for f in self.primary_files:
+                path = f['path']
+                # Extract purpose from description if available
+                desc = f.get('description', '')
+                summary = None
+                if desc:
+                    # Look for **Purpose**: line
+                    for line in desc.split('\n'):
+                        if '**Purpose**:' in line:
+                            summary = line.replace('**Purpose**:', '').strip()
+                            break
+                    # If no Purpose line, use first non-header line
+                    if not summary:
+                        for line in desc.split('\n'):
+                            line = line.strip()
+                            if line and not line.startswith('#') and not line.startswith('**'):
+                                summary = line
+                                break
+
+                if summary:
+                    # Truncate to 70 chars
+                    if len(summary) > 70:
+                        summary = summary[:67] + "..."
+                    lines.append(f"- **{path}**: {summary}")
+                else:
+                    # Show class/function count
+                    classes = len(f.get('classes', []))
+                    functions = len(f.get('functions', []))
+                    lines.append(f"- **{path}**: {classes} classes, {functions} functions")
+            lines.append("")
+
+        # Related files - just paths
+        if self.related_files:
+            lines.append("## Related Files")
+            for f in self.related_files:
+                lines.append(f"- {f['path']}")
+            lines.append("")
+
+        # Brief counts for other sections
+        extras = []
+        if self.patterns:
+            extras.append(f"{len(self.patterns)} patterns")
+        if self.execution_paths:
+            extras.append(f"{len(self.execution_paths)} execution flows")
+        if self.contracts:
+            extras.append(f"{len(self.contracts)} contracts")
+
+        if extras:
+            lines.append(f"**Also includes**: {', '.join(extras)}")
+            lines.append("")
+
+        lines.append("*Use without --compact for full details.*")
+
+        return "\n".join(lines)
+
+    def estimate_tokens(self) -> dict[str, int]:
+        """Estimate token count for the context package.
+
+        Uses a simple character-based estimate (roughly 4 chars per token).
+        For more accurate counts, use tiktoken.
+
+        Returns:
+            Dict with token estimates by section and total, including
+            the formatted markdown output.
+        """
+        def chars_to_tokens(text: str) -> int:
+            """Rough estimate: ~4 characters per token for English."""
+            return len(text) // 4
+
+        estimates: dict[str, int] = {}
+
+        # Primary files content
+        primary_text = ""
+        for f in self.primary_files:
+            primary_text += f.get('path', '') + "\n"
+            primary_text += f.get('description', '') + "\n"
+            for cls in f.get('classes', []):
+                primary_text += str(cls) + "\n"
+            for func in f.get('functions', []):
+                primary_text += str(func) + "\n"
+        estimates['primary_files'] = chars_to_tokens(primary_text)
+
+        # Related files
+        related_text = "\n".join(f.get('path', '') for f in self.related_files)
+        estimates['related_files'] = chars_to_tokens(related_text)
+
+        # Patterns
+        patterns_text = "\n".join(f"{p.get('key', '')}: {p.get('value', '')}" for p in self.patterns)
+        estimates['patterns'] = chars_to_tokens(patterns_text)
+
+        # Execution paths
+        paths_text = "\n".join(str(p) for p in self.execution_paths)
+        estimates['execution_paths'] = chars_to_tokens(paths_text)
+
+        # Contracts
+        contracts_text = "\n".join(self.contracts)
+        estimates['contracts'] = chars_to_tokens(contracts_text)
+
+        # Subtotal of content
+        content_total = sum(estimates.values())
+        estimates['content_subtotal'] = content_total
+
+        # Actual formatted output (includes markdown formatting overhead)
+        markdown_output = self.to_markdown()
+        estimates['formatted_output'] = chars_to_tokens(markdown_output)
+
+        # Total is the formatted output (which includes all content + formatting)
+        estimates['total'] = estimates['formatted_output']
+
+        return estimates
 
 
 def search_manifest(
@@ -348,11 +490,14 @@ def expand_with_call_graph(
     return related[:max_related]
 
 
+_llm_warning_shown = False
+
 def get_file_description(
     brief_path: Path,
     file_path: str,
     auto_generate: bool = False,
-    base_path: Optional[Path] = None
+    base_path: Optional[Path] = None,
+    show_progress: bool = True
 ) -> str | None:
     """Get the description for a file.
 
@@ -361,10 +506,14 @@ def get_file_description(
         file_path: Relative path to the file
         auto_generate: If True, generate description on-demand if missing
         base_path: Base path for the project (required if auto_generate is True)
+        show_progress: If True, print progress message when generating (default True)
 
     Returns:
         The description content, or None if not found and auto_generate is False.
     """
+    import sys
+    global _llm_warning_shown
+
     context_file = brief_path / CONTEXT_DIR / "files" / (file_path.replace("/", "__").replace("\\", "__") + ".md")
     if context_file.exists():
         return context_file.read_text()
@@ -372,7 +521,24 @@ def get_file_description(
     # Lazy generation if requested
     if auto_generate and base_path:
         try:
-            from ..generation.generator import generate_and_save_file_description
+            from ..generation.generator import generate_and_save_file_description, is_baml_available
+
+            # Show warning once if LLM is unavailable
+            if not is_baml_available() and not _llm_warning_shown:
+                _llm_warning_shown = True
+                print(
+                    "Note: LLM not configured - descriptions will show code structure only.\n"
+                    "      To enable full descriptions, configure BAML with an API key.\n"
+                    "      See: brief describe --help",
+                    file=sys.stderr
+                )
+
+            if show_progress:
+                if is_baml_available():
+                    print(f"  Generating description for {file_path}...", file=sys.stderr)
+                else:
+                    print(f"  Creating signature summary for {file_path}...", file=sys.stderr)
+
             return generate_and_save_file_description(brief_path, base_path, file_path)
         except Exception:
             pass

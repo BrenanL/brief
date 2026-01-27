@@ -284,3 +284,159 @@ def format_stale(stale_files: list[dict[str, Any]]) -> str:
     lines.append("Run 'brief analyze refresh' to re-analyze changed files.")
 
     return "\n".join(lines)
+
+
+def calculate_coverage_by_directory(
+    brief_path: Path,
+    base_path: Path,
+    exclude_patterns: list[str]
+) -> dict[str, dict[str, int]]:
+    """Calculate coverage statistics grouped by top-level directory.
+
+    Returns:
+        Dict mapping directory name to stats dict with keys:
+        - total: total files
+        - analyzed: analyzed files
+        - described: files with descriptions
+        - stale: files with stale descriptions
+    """
+    from collections import defaultdict
+
+    # Initialize stats per directory
+    stats: dict[str, dict[str, int]] = defaultdict(lambda: {
+        "total": 0,
+        "analyzed": 0,
+        "described": 0,
+        "stale": 0
+    })
+
+    # Get all Python files
+    all_files = list(find_python_files(base_path, exclude_patterns))
+
+    # Track which files are analyzed/described
+    analyzed_paths: set[str] = set()
+    described_paths: set[str] = set()
+
+    for record in read_jsonl(brief_path / MANIFEST_FILE):
+        if record["type"] == "file" and record.get("parsed", True):
+            analyzed_paths.add(record["path"])
+            if record.get("context_ref"):
+                described_paths.add(record["path"])
+
+    # Find stale descriptions
+    stale_paths = {f["path"] for f in find_stale_descriptions(brief_path, base_path)}
+
+    # Process each file
+    for file_path in all_files:
+        rel_path = str(file_path.relative_to(base_path))
+
+        # Get top-level directory
+        parts = rel_path.split("/")
+        if len(parts) > 1:
+            directory = parts[0]
+        else:
+            directory = "(root)"
+
+        stats[directory]["total"] += 1
+        if rel_path in analyzed_paths:
+            stats[directory]["analyzed"] += 1
+        if rel_path in described_paths:
+            stats[directory]["described"] += 1
+        if rel_path in stale_paths:
+            stats[directory]["stale"] += 1
+
+    return dict(stats)
+
+
+def format_coverage_detailed(
+    brief_path: Path,
+    base_path: Path,
+    exclude_patterns: list[str],
+    console: "Console | None" = None
+) -> None:
+    """Format and print detailed coverage by directory.
+
+    Args:
+        brief_path: Path to .brief directory
+        base_path: Base path for the project
+        exclude_patterns: Patterns to exclude
+        console: Rich console to print to (creates one if not provided)
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich import box
+
+    if console is None:
+        console = Console()
+
+    stats = calculate_coverage_by_directory(brief_path, base_path, exclude_patterns)
+
+    if not stats:
+        console.print("No Python files found.")
+        return
+
+    # Sort directories: src first, tests last, others in between
+    def sort_key(name: str) -> tuple[int, str]:
+        if name == "src":
+            return (0, name)
+        elif name == "tests":
+            return (2, name)
+        elif name == "(root)":
+            return (3, name)
+        return (1, name)
+
+    sorted_dirs = sorted(stats.keys(), key=sort_key)
+
+    console.print("[bold]Coverage by Directory[/bold]")
+    console.print()
+
+    table = Table(box=box.ROUNDED, show_header=True, header_style="bold")
+    table.add_column("Directory", style="cyan")
+    table.add_column("Total", justify="right")
+    table.add_column("Analyzed", justify="right")
+    table.add_column("Described", justify="right")
+    table.add_column("Stale", justify="right")
+    table.add_column("Coverage", justify="right")
+
+    totals = {"total": 0, "analyzed": 0, "described": 0, "stale": 0}
+
+    for directory in sorted_dirs:
+        data = stats[directory]
+        coverage_pct = (data["described"] / data["total"] * 100) if data["total"] > 0 else 0
+
+        # Color the coverage percentage
+        if coverage_pct >= 80:
+            cov_str = f"[green]{coverage_pct:.0f}%[/green]"
+        elif coverage_pct >= 50:
+            cov_str = f"[yellow]{coverage_pct:.0f}%[/yellow]"
+        else:
+            cov_str = f"[red]{coverage_pct:.0f}%[/red]"
+
+        # Color stale count
+        stale_str = f"[yellow]{data['stale']}[/yellow]" if data["stale"] > 0 else str(data["stale"])
+
+        table.add_row(
+            directory,
+            str(data["total"]),
+            str(data["analyzed"]),
+            str(data["described"]),
+            stale_str,
+            cov_str
+        )
+
+        # Update totals
+        for key in totals:
+            totals[key] += data[key]
+
+    # Add totals row
+    total_coverage = (totals["described"] / totals["total"] * 100) if totals["total"] > 0 else 0
+    table.add_row(
+        "[bold]Total[/bold]",
+        f"[bold]{totals['total']}[/bold]",
+        f"[bold]{totals['analyzed']}[/bold]",
+        f"[bold]{totals['described']}[/bold]",
+        f"[bold]{totals['stale']}[/bold]",
+        f"[bold]{total_coverage:.0f}%[/bold]"
+    )
+
+    console.print(table)
