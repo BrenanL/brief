@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- Task archiving system: `brief task archive` saves snapshots to `.brief/archives/tasks/`
+  - `--name` for custom archive names
+  - `--link` to copy and associate a plan file with the archive
+  - `--clear` to clear tasks after archiving
+  - `brief task archive list` to view all archives
+- Task clearing: `brief task clear` with `--done-only` option to keep active tasks
+
+---
+
 ## [0.2.0] - 2026-01-23
 
 Major feature release with 23 new features and improvements.
