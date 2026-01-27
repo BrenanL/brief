@@ -78,3 +78,4 @@ baml_client/
 .brief/
 .brief-logs/
 *.jsonl.bak
+private/
