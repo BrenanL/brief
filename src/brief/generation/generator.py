@@ -31,6 +31,25 @@ except Exception:
     pass
 
 
+def _get_baml_options(base_path: Path = Path(".")) -> dict:
+    """Get BAML options including the active model client.
+
+    Args:
+        base_path: Base path for Brief project (to find config)
+
+    Returns:
+        Dict with client name if a non-default model is active
+    """
+    from ..llm import get_active_model, get_model_client_name
+
+    model = get_active_model(base_path)
+    client_name = get_model_client_name(model)
+
+    if client_name and client_name != "Default":
+        return {"client": client_name}
+    return {}
+
+
 def extract_function_code(file_path: Path, start_line: int, end_line: int | None) -> str:
     """Extract function code from file."""
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -62,11 +81,13 @@ def describe_function(
     )
 
     if _baml_available and _baml_client:
+        baml_options = _get_baml_options(base_path)
         result = _baml_client.DescribeFunction(
             function_name=record.name,
             function_code=code,
             file_context=file_context or f"Part of {record.file}",
-            docstring=record.docstring
+            docstring=record.docstring,
+            baml_options=baml_options
         )
         return FunctionDescription(
             purpose=result.purpose,
@@ -94,12 +115,14 @@ def describe_class(
     )
 
     if _baml_available and _baml_client:
+        baml_options = _get_baml_options(base_path)
         result = _baml_client.DescribeClass(
             class_name=record.name,
             class_code=code,
             file_context=file_context or f"Part of {record.file}",
             docstring=record.docstring,
-            method_names=record.methods
+            method_names=record.methods,
+            baml_options=baml_options
         )
         return ClassDescription(
             purpose=result.purpose,
@@ -130,12 +153,14 @@ def describe_file(
         content = content[:max_chars] + "\n... [truncated]"
 
     if _baml_available and _baml_client:
+        baml_options = _get_baml_options(base_path)
         result = _baml_client.DescribeFile(
             file_path=record.path,
             file_content=content,
             class_names=class_names,
             function_names=function_names,
-            imports=imports[:20]
+            imports=imports[:20],
+            baml_options=baml_options
         )
         return FileDescription(
             purpose=result.purpose,
@@ -153,15 +178,18 @@ def describe_module(
     module_name: str,
     file_summaries: list[str],
     class_count: int,
-    function_count: int
+    function_count: int,
+    base_path: Path = Path(".")
 ) -> ModuleDescription:
     """Generate description for a module."""
     if _baml_available and _baml_client:
+        baml_options = _get_baml_options(base_path)
         result = _baml_client.DescribeModule(
             module_name=module_name,
             file_summaries=file_summaries,
             class_count=class_count,
-            function_count=function_count
+            function_count=function_count,
+            baml_options=baml_options
         )
         return ModuleDescription(
             purpose=result.purpose,

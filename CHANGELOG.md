@@ -15,6 +15,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `--clear` to clear tasks after archiving
   - `brief task archive list` to view all archives
 - Task clearing: `brief task clear` with `--done-only` option to keep active tasks
+- Multi-model LLM support with runtime model switching:
+  - `brief model list` - show available models
+  - `brief model set <model>` - set active model for session
+  - `brief model show` - display currently active model and source
+  - `brief model clear` - revert to config default
+  - `brief model test [--all]` - test model connectivity
+  - Available models: gpt-4o-mini, gpt-4o, gpt-5-mini, claude-sonnet, claude-haiku, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-2.5-flash-lite, gemini-2.5-flash, gemini-3-flash-preview
+  - Default model changed from gpt-5-mini to gemini-2.5-flash
+
+### Fixed
+- Model configuration now actually controls which LLM is used (previously was display-only)
+- BAML Gemini clients now use correct `generationConfig` syntax for temperature
+- Fixed gpt-5-mini which doesn't support temperature parameter
 
 ---
 

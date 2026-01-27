@@ -42,7 +42,7 @@
 
 - `[DONE 2026-01-27]` Task archiving system - `brief task archive` and `brief task clear` commands
 - `[NO TASK]` Figure out claude permissions file format to allow all brief commands
-- `[NO TASK]` What models are actually being used? Seeing gpt-4o usage, not gpt-5-mini
+- `[DONE 2026-01-27]` Multi-model LLM support - `brief model` command, runtime model switching, fixed model configuration
 - `[DEFERRED]` Conditional description generation tiers - configure what files get LLM descriptions vs just analysis
 - Review `.brief-logs/` from TASK_PLAN_01 run to assess brief efficacy and look for improvements
 - Change `brief q <>` shorthand to `brief ctx <>`
