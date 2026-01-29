@@ -1,301 +1,213 @@
-# Testing Brief Utilization
+# Testing Guide
 
-This document describes how to test and optimize agent adoption of the `brief context get` command.
+How to run Brief performance tests and interpret results.
 
-## Overview
+## Prerequisites
 
-The goal is to measure and improve how often AI agents use `brief context get` instead of raw Read/Grep/Glob when exploring code. Higher Brief usage means:
-- More structured context for the agent
-- Better understanding of file relationships
-- Fewer wasted tokens on irrelevant code
+1. Ensure Brief is set up with context data:
+   ```bash
+   source .venv/bin/activate
+   brief analyze refresh
+   brief describe batch --limit 100 --include-other
+   ```
+
+2. Commit any changes you want tested (tests clone from HEAD):
+   ```bash
+   git add -A && git commit -m "prepare for test run"
+   ```
+
+3. Verify the temp directory exists:
+   ```bash
+   mkdir -p /home/user/tmp/brief-performance-testing
+   ```
+
+## Running Tests
+
+### Full Test Suite
+
+Run all 7 configs across all 9 dimensions (63 tests):
+
+```bash
+python performance-testing/run_test.py run --configs all --dimensions all
+```
+
+### Targeted Testing
+
+Run specific configs or dimensions:
+
+```bash
+# Compare null vs baseline with no hooks
+python performance-testing/run_test.py run \
+  --configs null-no-hooks baseline-no-hooks \
+  --dimensions feature-addition bug-investigation
+
+# Test a single config across all dimensions
+python performance-testing/run_test.py run \
+  --configs baseline-pretool \
+  --dimensions all
+```
+
+### Configuration
+
+Edit `config.json` to adjust defaults:
+
+```json
+{
+    "temp_dir": "/home/user/tmp/brief-performance-testing",
+    "manifest_path": "performance-testing/results/manifest.jsonl",
+    "max_workers": 2,
+    "defaults": {
+        "max_turns": 25,
+        "max_budget": 2.0,
+        "timeout": 600
+    }
+}
+```
+
+Override per-run:
+
+```bash
+python performance-testing/run_test.py run \
+  --configs all --dimensions all \
+  --workers 3 --max-turns 30 --max-budget 3.0
+```
+
+### Monitoring
+
+While tests run, the orchestrator prints live status:
+
+```
+[19:33:21] Started: null-pretool__feature-addition (pid=12345)
+[Orchestrator] Workers: 2/2 | Queue: 45 | Done: 14 | Failed: 2
+  W1: null-pretool__feature-addition (3m12s) pid=12345
+  W2: null-pretool__multi-task (1m45s) pid=12346
+```
+
+### Interrupting
+
+Press Ctrl-C to gracefully stop. The orchestrator will:
+1. Stop dequeuing new jobs
+2. Send SIGTERM to active processes
+3. Wait 5 seconds, then SIGKILL
+4. Update manifest with `status=killed`
+
+Remaining queued jobs stay in the manifest as `status=queued`.
+
+## Analyzing Results
+
+### Basic Analysis
+
+```bash
+# Use default manifest
+python performance-testing/analyze.py
+
+# Specify manifest
+python performance-testing/analyze.py performance-testing/results/manifest.jsonl
+```
+
+Output includes:
+- **By Configuration**: Average Brief ratio per config
+- **By Dimension**: Average Brief ratio per dimension
+- **Variable Isolation**: CLAUDE.md impact and hook impact analysis
+
+### Full Matrix
+
+```bash
+python performance-testing/analyze.py --matrix
+```
+
+Shows Brief ratio for every config x dimension combination.
+
+### Job Detail
+
+```bash
+python performance-testing/analyze.py --detail baseline-pretool__feature-addition
+```
+
+Shows full tool counts, metrics, and file paths for one job.
 
 ## Key Metrics
 
 ### Brief Ratio
 
 ```
-Brief Ratio = context_get_calls / (Read + Grep + Glob calls)
+Brief Ratio = context_get_calls / (context_get_calls + Read + Grep + Glob)
 ```
 
 | Ratio | Interpretation |
 |-------|----------------|
-| > 0.5 | Excellent - Agent prefers Brief |
-| 0.3 - 0.5 | Good - Balanced usage |
-| 0.1 - 0.3 | Moderate - Room for improvement |
-| < 0.1 | Poor - Agent ignoring Brief |
+| > 0.5 | Excellent - agent prefers Brief |
+| 0.3 - 0.5 | Good - balanced usage |
+| 0.1 - 0.3 | Moderate - room for improvement |
+| < 0.1 | Poor - agent ignoring Brief |
 
-### What We're Measuring
+### What to Look For
 
-1. **`brief context get` calls** - Direct usage of Brief's context command
-2. **`brief q` calls** - Shortcut for context get
-3. **Read tool calls** - Direct file reading
-4. **Grep tool calls** - Pattern searching
-5. **Glob tool calls** - File discovery
+1. **CLAUDE.md impact**: Compare `null-*` vs `baseline-*` configs with same hooks
+2. **Hook impact**: Compare configs with same CLAUDE.md but different hooks
+3. **Dimension patterns**: Which task types benefit most from Brief guidance?
+4. **Degradation**: Does Brief ratio decline in multi-task or resume scenarios?
 
-## Quick Commands
+## Repo Isolation
 
-### View Current Metrics
+Each test runs in a `git clone` of the project at `/home/user/tmp/brief-performance-testing/`.
+This ensures:
+- Each agent has its own `.git` directory
+- No file changes leak to the main repo
+- Claude Code treats each clone as a standalone project
 
-```bash
-# See metrics from existing logs
-brief logs metrics
-
-# Show recent log entries
-brief logs show -n 20
-
-# Export for analysis
-brief logs export logs.json
-```
-
-### Clear and Start Fresh
+Work directories persist after tests for inspection:
 
 ```bash
-# Clear logs before a test run
-brief logs clear -f
+# See what an agent did
+ls /home/user/tmp/brief-performance-testing/baseline-pretool__feature-addition/
+git -C /home/user/tmp/brief-performance-testing/baseline-pretool__feature-addition/ diff
+
+# Read the Claude output
+cat /home/user/tmp/brief-performance-testing/baseline-pretool__feature-addition/stdout.jsonl
 ```
 
-## A/B Testing Framework
+## Manifest Format
 
-### Running Tests
+Results are tracked in `performance-testing/results/manifest.jsonl` (append-only JSONL).
+Each status change appends a new line. Latest entry per job_id is the truth.
 
 ```bash
-cd /home/user/dev/brief
-
-# Single test with specific config
-python performance-testing/run_test.py --config hooks-v2 --task "Explain the task system"
-
-# Compare two configurations
-python performance-testing/run_test.py --compare baseline hooks-v2 --task "Find where files are indexed"
-
-# Run all standard test tasks
-python performance-testing/run_test.py --compare baseline hooks-v2 --task all --output results.json
-
-# Keep test environment to review agent changes
-python performance-testing/run_test.py --config hooks-v2 --task "Add a feature" --keep-env
+# See all jobs and their status
+cat performance-testing/results/manifest.jsonl | python3 -c "
+import json, sys
+seen = {}
+for line in sys.stdin:
+    e = json.loads(line)
+    seen[e['job_id']] = e['status']
+for jid, status in sorted(seen.items()):
+    print(f'{status:12} {jid}')
+"
 ```
 
-### Environment Isolation
-
-Each test runs in an **isolated copy** of the project:
-- Project is copied to `.brief-logs/test-runs/<run-id>/env/`
-- Agent changes don't affect the main repo
-- Use `--keep-env` to preserve the environment for review
-- Without `--keep-env`, the environment is cleaned up after the test
-
-### Available Configurations
-
-| Config | Hooks | CLAUDE.md | Purpose |
-|--------|-------|-----------|---------|
-| `baseline` | None | Minimal | Control group |
-| `hooks-v1` | UserPromptSubmit only | Minimal | Test single hook |
-| `hooks-v2` | Full suite | Streamlined | Current production |
-| `hooks-v2-verbose-md` | Full suite | Verbose | Test CLAUDE.md impact |
-
-### Standard Test Tasks
-
-These tasks are designed to require code exploration:
-
-1. "Explain how the task management system works"
-2. "Find where file descriptions are stored and generated"
-3. "Understand the context retrieval system"
-4. "Add a --verbose flag to brief status command"
-5. "Find all places where JSONL files are written"
-
-### Interpreting Results
-
-```
-============================================================
-COMPARISON RESULTS
-============================================================
-Config          context get  Read/Grep/Glob  Ratio      Duration
-------------------------------------------------------------
-baseline        1            15              6.67%      45.2s
-hooks-v2        5            8               62.50%     38.1s
-============================================================
-```
-
-**What to look for:**
-- Higher Brief Ratio = better
-- Fewer total Read/Grep/Glob calls = more efficient
-- Similar or lower duration = no performance penalty
-
-## Hook Tuning Guide
-
-### Current Hook Setup
-
-Located in `.claude/settings.json`:
-
-1. **SessionStart** - Primes agent with Brief workflow
-2. **UserPromptSubmit** - Reminds to use Brief first
-3. **PreToolUse** - Contextual tip when reading code files
-4. **PreCompact** - Ensures resume instructions in compaction
-
-### Tuning the Hooks
-
-#### If Brief Ratio is too low:
-
-1. **Strengthen UserPromptSubmit message** - Make it more directive:
-   ```bash
-   # In scripts/hooks/user-prompt.sh
-   echo '[Brief] FIRST run: brief context get "<topic>" - THEN use Read for specific files.'
-   ```
-
-2. **Make PreToolUse more prominent**:
-   ```python
-   # In scripts/hooks/pre-tool-use.sh
-   # Change the message to be more actionable
-   additionalContext = f"[Action Required] Before reading {filename}, run `brief context get` to understand its role."
-   ```
-
-3. **Add to SessionStart** - Include example usage:
-   ```
-   Example: brief context get "task management" returns 5 relevant files with descriptions
-   ```
-
-#### If agents seem confused:
-
-1. **Simplify messages** - Too much instruction can be ignored
-2. **Focus on the "why"** - Explain benefit, not just command
-3. **Reduce redundancy** - Don't repeat same message in multiple hooks
-
-### Hook Message Guidelines
-
-**DO:**
-- Keep messages short (1-2 sentences)
-- Be specific about what Brief provides
-- Use actionable language ("run X" not "consider X")
-
-**DON'T:**
-- Block or deny tool usage (frustrates agents)
-- Repeat the same message multiple times per turn
-- Use warning/error language (creates anxiety)
-
-## Manual Testing Protocol
-
-When automated testing isn't enough:
-
-### Single Session Test
-
-1. Clear logs: `brief logs clear -f`
-2. Start fresh session: `claude`
-3. Give exploration task: "Understand how the context system works"
-4. Let agent work for 5-10 minutes
-5. Check metrics: `brief logs metrics`
-
-### What to Observe
-
-- Does the agent use `brief context get` at the start?
-- After the first Read, does it switch to Brief?
-- Does the PreToolUse hook message appear?
-- Does the agent acknowledge the Brief suggestions?
-
-### Recording Observations
-
-Note in `docs/DEV_NOTES.md`:
-- Date and configuration tested
-- Brief Ratio achieved
-- Qualitative observations
-- Ideas for improvement
-
-## Analyzing Claude Code Logs
-
-For deeper analysis, parse the Claude Code session logs:
+## Cleanup
 
 ```bash
-# Find session files
-ls -la ~/.claude/projects/-home-user-dev-brief/
+# Remove all test work directories
+rm -rf /home/user/tmp/brief-performance-testing/*
 
-# Parse with Python (see scripts in earlier analysis)
-python3 << 'EOF'
-import json
-# ... analysis code from BRIEF_UTILIZATION_PLAN.md
-EOF
+# Clear manifest to start fresh
+rm performance-testing/results/manifest.jsonl
 ```
 
-## Success Criteria
+## Testing the Orchestrator
 
-### Minimum Viable
-
-- Brief Ratio > 0.2 (1 context get per 5 Read/Grep/Glob)
-- Agent uses Brief at least once per task
-
-### Target
-
-- Brief Ratio > 0.4 (1 context get per 2.5 Read/Grep/Glob)
-- Agent uses Brief FIRST for exploration
-- Agent uses Read only for files it intends to edit
-
-### Stretch Goal
-
-- Brief Ratio > 0.6
-- Agent explains why it chose Brief or Read
-- Agent builds on Brief's context in its reasoning
-
-## Iteration Cycle
-
-1. **Measure** - Run `brief logs metrics` or A/B test
-2. **Analyze** - Identify where Brief wasn't used but should have been
-3. **Adjust** - Tune hook messages or CLAUDE.md
-4. **Test** - Run another test with new configuration
-5. **Compare** - Did Brief Ratio improve?
-6. **Document** - Record what worked in DEV_NOTES.md
-
-## Reviewing Test Results
-
-### Test Output Location
-
-All test outputs are saved in `.brief-logs/test-runs/`:
-
-```
-.brief-logs/test-runs/
-├── hooks-v2_20260127-143022/
-│   ├── metadata.json      # Test config, metrics, timing
-│   ├── claude_output.json # Raw Claude response
-│   └── env/               # Test environment (if --keep-env)
-│       ├── src/
-│       ├── CLAUDE.md
-│       └── ... (agent's changes are here)
-```
-
-### Reviewing Agent Changes
-
-When using `--keep-env`:
+Run the orchestrator's own tests:
 
 ```bash
-# See what files the agent modified
-ls -la .brief-logs/test-runs/<run-id>/env/
-
-# Diff against original
-diff -r src/ .brief-logs/test-runs/<run-id>/env/src/
-
-# Or use git if you init'd the test env
-cd .brief-logs/test-runs/<run-id>/env/
-git init && git add -A && git status
+python performance-testing/test_orchestrator.py
 ```
 
-### Parsing Raw Output
-
-The `claude_output.json` contains the full conversation:
-
-```python
-import json
-
-with open(".brief-logs/test-runs/<run-id>/claude_output.json") as f:
-    for line in f:
-        event = json.loads(line)
-        if event.get("type") == "assistant":
-            # Agent's messages and tool calls
-            print(event)
-```
-
-## Files Reference
-
-| File | Purpose |
-|------|---------|
-| `.claude/settings.json` | Hook configuration |
-| `scripts/hooks/*.sh` | Hook scripts |
-| `CLAUDE.md` | Agent instructions |
-| `.brief-logs/commands.log` | Command log |
-| `performance-testing/run_test.py` | A/B test runner |
-| `performance-testing/test-files/` | CLAUDE.md variants for testing |
-| `performance-testing/configs/` | Configuration documentation |
+This tests:
+- Repo isolation (git clone, .git exists, toplevel correct)
+- Environment setup (CLAUDE.md override, settings.json)
+- Custom setup functions
+- Manifest tracking
+- Hello-world Claude run
+- Parallel execution
+- No main repo contamination

@@ -110,22 +110,34 @@ We test 7 configurations across 9 testing dimensions, measuring Brief utilizatio
 
 ## Test Implementation
 
+### Architecture
+
+Tests use a general-purpose **Claude Code Orchestrator** (`orchestrator.py`) that manages:
+- Git clone-based repo isolation (each test gets its own clone)
+- Worker pool with configurable parallelism
+- Append-only JSONL manifest for tracking
+- Process group cleanup on interrupt
+
+See `ORCHESTRATOR_DESIGN.md` for full architecture.
+
 ### File Structure
 
 ```
 performance-testing/
-├── PERFORMANCE_TESTING_PLAN.md    # This document
-├── TESTING_GUIDE.md               # How to run tests
-├── run_test.py                    # Test runner script
-├── results/                       # Test results (JSON)
-│   └── YYYY-MM-DD_HH-MM-SS/       # Per-run directories
-├── configs/                       # Config documentation
-│   ├── null.md
-│   ├── baseline.md
-│   └── hooks-*.md (historical)
-└── test-files/                    # CLAUDE.md variants
-    ├── claude-md-null.md          # No Brief references
-    └── claude-md-baseline.md      # Original Brief instructions
+├── orchestrator.py               # General-purpose Claude Code orchestrator
+├── run_test.py                   # Brief test definitions + job generation
+├── analyze.py                    # Post-run analysis and reporting
+├── config.json                   # Orchestrator configuration
+├── test_orchestrator.py          # Orchestrator tests
+├── PERFORMANCE_TESTING_PLAN.md   # This document
+├── ORCHESTRATOR_DESIGN.md        # Orchestrator architecture
+├── TESTING_GUIDE.md              # How to run tests
+├── results/
+│   └── manifest.jsonl            # Test run tracking (append-only)
+├── configs/                      # Config documentation (historical)
+└── test-files/
+    ├── claude-md-null.md         # No Brief references (control)
+    └── claude-md-baseline.md     # Original Brief instructions
 ```
 
 ### Environment Setup
@@ -133,24 +145,15 @@ performance-testing/
 Before running tests:
 1. Run `brief analyze refresh` to update analysis
 2. Run `brief describe batch --limit 100 --include-other` to generate descriptions
-3. The test runner copies `.brief/` to isolated environments (excluding tasks.jsonl)
+3. Commit changes: tests clone from HEAD
+4. Ensure temp dir exists: `mkdir -p /home/user/tmp/brief-performance-testing`
 
 ### Results Collection
 
-Results are stored in JSON format with:
-- Config name
-- Dimension/task type
-- Timestamp
-- Tool usage counts (Read, Grep, Glob, Bash with `brief context get`)
-- Brief ratio calculation
-- Duration
-- Raw output path
+Results are tracked via JSONL manifest. Analysis is done post-run by parsing
+the manifest and Claude output files from each test's work directory.
 
-Schema supports:
-- Adding new configs
-- Adding new test cases
-- Running repeat tests
-- Aggregation across runs
+See `TESTING_GUIDE.md` for usage.
 
 ---
 

@@ -1,46 +1,88 @@
 # Brief Performance Testing
 
-This folder contains documentation and tools for testing Brief's effectiveness at guiding AI agents to use structured context tools.
+Tools and infrastructure for testing Brief's effectiveness at guiding AI agents to use structured context tools.
 
-## Contents
+## Architecture
 
-| File | Description |
-|------|-------------|
-| `TEST_RESULTS.md` | Results from A/B testing across all configurations |
+| File | Purpose |
+|------|---------|
+| `orchestrator.py` | General-purpose Claude Code run orchestrator |
+| `run_test.py` | Brief-specific test definitions and job generation |
+| `analyze.py` | Post-run analysis and comparison reports |
+| `config.json` | Orchestrator configuration (temp dir, workers, defaults) |
+| `test_orchestrator.py` | Tests for the orchestrator itself |
+
+### Documentation
+
+| File | Purpose |
+|------|---------|
+| `PERFORMANCE_TESTING_PLAN.md` | Testing strategy, dimensions, and config matrix |
+| `ORCHESTRATOR_DESIGN.md` | Orchestrator architecture and design |
 | `TESTING_GUIDE.md` | How to run tests and interpret results |
-| `configs/baseline.md` | Baseline configuration (no hooks, minimal CLAUDE.md) |
-| `configs/hooks-v1.md` | Original setup (verbose CLAUDE.md + UserPromptSubmit hook) |
-| `configs/hooks-v2.md` | Full hook suite (4 hooks + streamlined CLAUDE.md) |
 
-## Quick Summary
+### Test Files
 
-Testing shows that Brief guidance dramatically improves agent behavior:
+| File | Purpose |
+|------|---------|
+| `test-files/claude-md-null.md` | CLAUDE.md with no Brief references (control) |
+| `test-files/claude-md-baseline.md` | Original CLAUDE.md with Brief workflow instructions |
 
-| Metric | baseline | hooks-v1 | hooks-v2 |
-|--------|----------|----------|----------|
-| Brief Ratio | 0% | **83.3%** | 61.1% |
-| Read/Grep/Glob calls | 35 | **2** | 8 |
-| Avg completion time | 60.9s | **21.3s** | 36.9s |
-
-**Key finding**: Verbose CLAUDE.md + simple hook (hooks-v1) outperformed the full hook suite (hooks-v2).
-
-## Running Tests
+## Quick Start
 
 ```bash
-# Compare all three configurations
-python performance-testing/run_test.py \
-  --compare baseline hooks-v1 hooks-v2 \
-  --task "Explain how the task management system works"
+# List available configurations and dimensions
+python performance-testing/run_test.py list-configs
+python performance-testing/run_test.py list-dimensions
 
-# Compare specific configs
-python performance-testing/run_test.py \
-  --compare baseline hooks-v1 \
-  --task "Find where file descriptions are stored"
+# Run tests (configs x dimensions)
+python performance-testing/run_test.py run --configs all --dimensions all
 
-# See all options
-python performance-testing/run_test.py --help
+# Run specific subset
+python performance-testing/run_test.py run \
+  --configs baseline-pretool baseline-full-hooks \
+  --dimensions feature-addition bug-investigation
+
+# Run with custom parallelism
+python performance-testing/run_test.py run --configs all --dimensions all --workers 3
+
+# Analyze results
+python performance-testing/analyze.py
+python performance-testing/analyze.py --matrix   # Full config x dimension matrix
+python performance-testing/analyze.py --detail job-id  # Detail for one run
 ```
 
-## Test Output Location
+## Test Configurations (7)
 
-Raw test outputs are saved to `.brief-logs/test-runs/` (not in this folder).
+| Config | CLAUDE.md | Hooks | Purpose |
+|--------|-----------|-------|---------|
+| `null-no-hooks` | Null | None | True control |
+| `null-pretool` | Null | PreToolUse | Isolate PreToolUse |
+| `null-userprompt` | Null | UserPromptSubmit | Isolate UserPromptSubmit |
+| `null-full-hooks` | Null | Full suite | Hooks without docs |
+| `baseline-no-hooks` | Baseline | None | Isolate docs impact |
+| `baseline-pretool` | Baseline | PreToolUse | Original base case |
+| `baseline-full-hooks` | Baseline | Full suite | Maximum guidance |
+
+## Test Dimensions (9)
+
+| Dimension | Type | Signal |
+|-----------|------|--------|
+| feature-addition | Greenfield impl | Does agent Brief before writing? |
+| multi-task | Sequential tasks | Does Brief usage persist? |
+| resume | Resume behavior | Does agent use `brief resume`? |
+| feature-extension | Extend existing | Brief-first or Read-first? |
+| bug-investigation | Pure exploration | Brief vs grep/read chains |
+| cross-cutting | Add to all | Discovery method |
+| integration | Connect X to Y | Multi-area exploration |
+| pattern-following | Follow patterns | Uses Brief for exemplars? |
+| documentation | Explain/document | Brief descriptions or from scratch? |
+
+## How It Works
+
+1. **`run_test.py`** generates `ClaudeJob` instances for each config x dimension combo
+2. **`orchestrator.py`** manages the queue:
+   - `git clone` to `/home/user/tmp/brief-performance-testing/` (proper isolation)
+   - Apply CLAUDE.md, hooks, and Brief context data
+   - Run `claude -p` with worker pool
+   - Track everything in JSONL manifest
+3. **`analyze.py`** reads the manifest and Claude outputs to generate comparison reports
