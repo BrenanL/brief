@@ -1,5 +1,6 @@
 """Development logging for Brief commands."""
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,11 @@ from typing import Optional
 BRIEF_LOGS_DIR = ".brief-logs"
 COMMAND_LOG_FILE = "commands.log"
 MAX_LOG_SIZE_MB = 10
+
+# Session event types
+SESSION_START = "SESSION:start"
+SESSION_END = "SESSION:end"
+SESSION_COMPACT = "SESSION:compact"
 
 
 def get_logs_path(base_path: Optional[Path] = None) -> Path:
@@ -124,3 +130,117 @@ def log_from_cli() -> None:
 
     command = " ".join(command_parts) if command_parts else "unknown"
     log_command(command, remaining_args)
+
+
+def log_session_event(
+    event: str, metadata: Optional[dict] = None, base_path: Optional[Path] = None
+) -> None:
+    """Log a session lifecycle event.
+
+    Args:
+        event: Event type (SESSION:start, SESSION:end, SESSION:compact).
+        metadata: Optional metadata dict (e.g., session_id, source).
+        base_path: Base path. Defaults to cwd.
+    """
+    if not is_logging_enabled(base_path):
+        return
+
+    logs_path = get_logs_path(base_path)
+    log_file = logs_path / COMMAND_LOG_FILE
+    logs_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().isoformat()
+    meta_str = json.dumps(metadata) if metadata else "{}"
+    entry = f"{timestamp} | {event} | {meta_str}\n"
+
+    with log_file.open("a") as f:
+        f.write(entry)
+
+
+def parse_log_file(base_path: Optional[Path] = None) -> list[dict]:
+    """Parse the command log file into structured entries.
+
+    Args:
+        base_path: Base path. Defaults to cwd.
+
+    Returns:
+        List of log entries as dicts with keys: timestamp, command, args, is_session_event.
+    """
+    logs_path = get_logs_path(base_path)
+    log_file = logs_path / COMMAND_LOG_FILE
+
+    if not log_file.exists():
+        return []
+
+    entries = []
+    with log_file.open("r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            parts = line.split(" | ", 2)
+            if len(parts) >= 2:
+                entry = {
+                    "timestamp": parts[0],
+                    "command": parts[1],
+                    "args": parts[2] if len(parts) > 2 else "",
+                    "is_session_event": parts[1].startswith("SESSION:"),
+                }
+                entries.append(entry)
+
+    return entries
+
+
+def get_session_metrics(entries: list[dict]) -> dict:
+    """Calculate metrics from parsed log entries.
+
+    Args:
+        entries: List of parsed log entries.
+
+    Returns:
+        Dict with metrics: context_get_count, read_count, grep_count, glob_count,
+        task_count, ratio, sessions.
+    """
+    metrics = {
+        "context_get_count": 0,
+        "read_grep_glob_proxies": 0,  # Commands that suggest Read/Grep/Glob usage
+        "task_commands": 0,
+        "total_commands": 0,
+        "sessions": [],
+    }
+
+    current_session_start = None
+
+    for entry in entries:
+        cmd = entry["command"]
+
+        if entry["is_session_event"]:
+            if cmd == SESSION_START:
+                current_session_start = entry["timestamp"]
+            elif cmd == SESSION_END and current_session_start:
+                metrics["sessions"].append({
+                    "start": current_session_start,
+                    "end": entry["timestamp"],
+                })
+                current_session_start = None
+            continue
+
+        metrics["total_commands"] += 1
+
+        # Count context get calls
+        if cmd in ("context get", "q"):
+            metrics["context_get_count"] += 1
+
+        # Count task-related commands
+        if cmd.startswith("task"):
+            metrics["task_commands"] += 1
+
+    # Calculate ratio (context_get calls vs total non-task commands)
+    exploration_commands = metrics["total_commands"] - metrics["task_commands"]
+    if exploration_commands > 0:
+        metrics["context_get_ratio"] = metrics["context_get_count"] / exploration_commands
+    else:
+        metrics["context_get_ratio"] = 0.0
+
+    return metrics
