@@ -87,6 +87,8 @@ from .commands import contracts as contracts_cmd
 from .commands import config_cmd
 from .commands import reset as reset_cmd
 from .commands import setup as setup_cmd
+from .commands import model as model_cmd
+from .commands import logs as logs_cmd
 
 # Register init as a direct command (not a subcommand)
 app.command(name="init")(init_cmd.init)
@@ -135,6 +137,12 @@ app.add_typer(contracts_cmd.app, name="contracts")
 
 # Register config commands as a subcommand group
 app.add_typer(config_cmd.app, name="config")
+
+# Register model commands as a subcommand group
+app.add_typer(model_cmd.app, name="model")
+
+# Register logs commands as a subcommand group
+app.add_typer(logs_cmd.app, name="logs")
 
 
 # Resume command - top-level for easy access
