@@ -16,9 +16,10 @@ Tools and infrastructure for testing Brief's effectiveness at guiding AI agents 
 
 | File | Purpose |
 |------|---------|
-| `PERFORMANCE_TESTING_PLAN.md` | Testing strategy, dimensions, and config matrix |
-| `ORCHESTRATOR_DESIGN.md` | Orchestrator architecture and design |
 | `TESTING_GUIDE.md` | How to run tests and interpret results |
+| `docs/PERFORMANCE_TESTING_PLAN.md` | Testing strategy, dimensions, and config matrix |
+| `docs/ORCHESTRATOR_DESIGN.md` | Orchestrator architecture and design |
+| `docs/initial-exploration-results.md` | Results from initial exploratory test run |
 
 ### Test Files
 
@@ -215,6 +216,21 @@ python performance-testing/analyze.py --matrix
 python performance-testing/analyze.py                          # Summary by config and dimension
 python performance-testing/analyze.py --matrix                 # Full config x dimension matrix
 python performance-testing/analyze.py --detail null-no-hooks__feature-addition  # One job in detail
+python performance-testing/analyze.py --include-voided         # Include voided tests in analysis
+```
+
+### Annotating Results
+
+Mark tests as voided (excluded from analysis), flagged, or add notes:
+
+```bash
+# Void a development/test run so it's excluded from analysis
+python performance-testing/analyze.py annotate null-no-hooks__feature-addition --void --note "development test"
+
+# Flag a compromised test for re-run
+python performance-testing/analyze.py annotate null-pretool__feature --flag compromised --note "venv missing"
+
+# Job IDs support prefix matching — no need to type the full timestamp
 ```
 
 ### Inspecting a Test Run

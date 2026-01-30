@@ -44,9 +44,15 @@
 - `[NO TASK]` Figure out claude permissions file format to allow all brief commands
 - `[DONE 2026-01-27]` Multi-model LLM support - `brief model` command, runtime model switching, fixed model configuration
 - `[DEFERRED]` Conditional description generation tiers - configure what files get LLM descriptions vs just analysis
-- Review `.brief-logs/` from TASK_PLAN_01 run to assess brief efficacy and look for improvements
+- `[DONE 2026-01-30]` Review `.brief-logs/` from TASK_PLAN_01 run to assess brief efficacy and look for improvements — led to performance testing system
+- `[DONE 2026-01-30]` Performance testing Phase 1 complete — 63 tests (7 configs x 9 dimensions), results report at `performance-testing/docs/performance-test-findings-v1.md`. Headline: Brief+Hooks is 30% faster, 45% fewer output tokens, 78% tool-model cost reduction across 5 valid Q1 dimensions. Per-model cost analysis added to `analyze.py`.
+- `[DONE 2026-01-30]` Orchestrator process orphan bug — `_handle_completion` didn't kill process groups on normal completion, leaving orphaned Claude subprocesses (MCP servers, subagents) consuming CPU. Fixed with `_cleanup_job()` method called on all completions.
+- `[DONE 2026-01-30]` Test clone venv isolation — test agents had no `.venv` in clones, causing 6/63 agents to escape to main repo when following CLAUDE.md `source .venv/bin/activate` instruction. Fixed: per-clone venv creation with `uv` (~1.5s) + orchestrator auto-detects and activates clone venv via subprocess env.
+- `[DONE 2026-01-30]` Rogue system-wide brief install — test agent (`feature-extension`) ran `pip install -e .` without venv, installing to `~/.local/`. Removed; prevented by per-clone venv isolation.
 - Change `brief q <>` shorthand to `brief ctx <>`
 - Spec analyzer concept - derive abstract understandings of code, snapshot format for "code at this moment"
+- `[NO TASK]` Analysis aggregation should average per-cell first — when multiple trials exist for a (config, dimension) pair, the analysis must average those trials into a single data point before computing cross-dimension aggregates. Otherwise dimensions with more repeat runs get over-weighted. Currently no duplicates exist, but this will matter as soon as we add repeat runs for validation. Affects `analyze.py` report functions.
+- `[NO TASK]` Agent checks task system on explicit instructions — performance testing revealed that Brief-guided agents run `brief status` + `brief task list` even when given a direct, specific coding instruction (e.g. "extend the describe command to support --format"). This adds ~15-30s of administrative overhead per task. The CLAUDE.md "Session Start Checklist" triggers unconditionally. Needs exploration and testing before attempting a fix — the checklist is valuable for ambiguous/resume scenarios but wasteful for direct prompts. Possible approaches: conditional checklist based on prompt type, lighter-weight startup, or hook-based detection of prompt specificity.
 
 ---
 
@@ -148,6 +154,13 @@ See CHANGELOG.md for details. Task archive: `.brief/archives/tasks/2026-01-27_*_
 ## Technical Notes
 
 ### Recent Architecture Decisions
+
+**Performance Testing Findings (2026-01-30)**
+- Claude Code agents inherit the launching shell's exact environment (PATH, VIRTUAL_ENV, etc.)
+- If you activate a venv before launching `claude`, agents are "in" that venv. If not, they use system PATH.
+- The orchestrator now auto-detects `.venv/bin` in clones and sets subprocess env accordingly, so agents start inside the clone's venv regardless of the orchestrator's own env.
+- Sonnet model stayed under Claude Max rate limits for 63 tests (~$0.38 each). No retries triggered.
+- Manifest annotation system added: void development tests, flag compromised tests, without deleting data.
 
 **Task Archiving (2026-01-27)**
 Archives stored in `.brief/archives/tasks/` with JSONL + metadata JSON + optional linked plan file. Enables sprint snapshots with full context preservation.

@@ -56,6 +56,9 @@ class ClaudeJob:
     setup_fn: Optional[Callable] = None         # Runs after clone: setup_fn(work_dir)
     overlay_paths: Optional[dict] = None        # {src_path: relative_dest_in_clone}
 
+    # Environment overrides for subprocess (merged into os.environ)
+    env_overrides: Optional[dict] = None
+
     # Passthrough metadata (stored in manifest, not used by orchestrator)
     metadata: dict = field(default_factory=dict)
 
@@ -91,12 +94,15 @@ class _ActiveJob:
     """Internal tracking for a running job."""
 
     def __init__(self, job: ClaudeJob, proc: subprocess.Popen,
-                 work_dir: Path, pgid: int, start_time: datetime):
+                 work_dir: Path, pgid: int, start_time: datetime,
+                 stdout_file=None, stderr_file=None):
         self.job = job
         self.proc = proc
         self.work_dir = work_dir
         self.pgid = pgid
         self.start_time = start_time
+        self.stdout_file = stdout_file
+        self.stderr_file = stderr_file
 
 
 class ClaudeOrchestrator:
@@ -279,11 +285,22 @@ class ClaudeOrchestrator:
         stdout_file = stdout_path.open("w")
         stderr_file = stderr_path.open("w")
 
+        # Build subprocess environment
+        # Auto-activate any .venv found in the work dir, then apply overrides
+        proc_env = os.environ.copy()
+        venv_bin = work_dir / ".venv" / "bin"
+        if venv_bin.is_dir():
+            proc_env["VIRTUAL_ENV"] = str(work_dir / ".venv")
+            proc_env["PATH"] = str(venv_bin) + os.pathsep + proc_env.get("PATH", "")
+        if job.env_overrides:
+            proc_env.update(job.env_overrides)
+
         proc = subprocess.Popen(
             cmd,
             cwd=work_dir,
             stdout=stdout_file,
             stderr=stderr_file,
+            env=proc_env,  # Always set: includes auto-detected .venv + any overrides
             preexec_fn=os.setsid,
         )
 
@@ -296,6 +313,8 @@ class ClaudeOrchestrator:
             work_dir=work_dir,
             pgid=pgid,
             start_time=start_time,
+            stdout_file=stdout_file,
+            stderr_file=stderr_file,
         )
 
         self._append_manifest(ManifestEntry(
@@ -385,9 +404,42 @@ class ClaudeOrchestrator:
         elif status != "rate_limited":
             self.failed_ids.append(job_id)
 
+        # Clean up process group and file handles to prevent orphaned processes
+        self._cleanup_job(aj)
+
         del self.active[job_id]
         if status != "rate_limited":
             _log(f"{status.upper()}: {job_id} (exit={exit_code}, {duration:.1f}s)")
+
+    def _cleanup_job(self, aj: _ActiveJob) -> None:
+        """Clean up process group and file handles for a finished job.
+
+        Kills any orphaned child processes (MCP servers, subagents, etc.)
+        that may still be running in the process group, and closes the
+        stdout/stderr file handles opened during _start_job.
+        """
+        # Kill the process group to reap any orphaned children
+        try:
+            os.killpg(aj.pgid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass  # Already dead or not owned
+
+        # Reap the main process
+        try:
+            aj.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(aj.pgid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+        # Close file handles
+        for fh in (aj.stdout_file, aj.stderr_file):
+            if fh and not fh.closed:
+                try:
+                    fh.close()
+                except OSError:
+                    pass
 
     def _kill_job(self, job_id: str, status: str = "killed") -> None:
         """Kill a running job by process group."""
@@ -395,19 +447,7 @@ class ClaudeOrchestrator:
         if not aj:
             return
 
-        try:
-            os.killpg(aj.pgid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-
-        # Give it a moment to exit
-        try:
-            aj.proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(aj.pgid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        self._cleanup_job(aj)
 
         end_time = datetime.now()
         duration = (end_time - aj.start_time).total_seconds()

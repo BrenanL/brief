@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Performance testing system (`performance-testing/`) for measuring Brief's effectiveness at guiding AI agents
+  - `orchestrator.py` - general-purpose Claude Code headless run orchestrator with worker pool, git clone isolation, process group management, and JSONL manifest tracking
+  - `run_test.py` - Brief-specific test matrix: 7 configs x 9 dimensions covering hook combinations, CLAUDE.md variants, and task types (feature addition, bug investigation, resume, multi-task, etc.)
+  - `analyze.py` - post-run analysis with per-config/per-dimension breakdowns, full matrix view, job detail, and manifest annotation (void, flag, note)
+  - Automatic rate limit detection and recovery — parses reset time from Claude output, sleeps until reset, re-queues affected jobs
+  - Per-clone venv isolation so test agents run in their own environment
+  - Phase 1 results: Brief+Hooks agents are 30% faster, generate 45% fewer output tokens, and reduce tool-model costs by 78% across 5 validated test dimensions. Full report: `performance-testing/docs/performance-test-findings-v1.md`
+  - Per-model cost analysis in `analyze.py` — config comparison now shows main model vs tool model cost split instead of misleading blended token counts
 - Task archiving system: `brief task archive` saves snapshots to `.brief/archives/tasks/`
   - `--name` for custom archive names
   - `--link` to copy and associate a plan file with the archive

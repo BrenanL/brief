@@ -193,7 +193,7 @@ Test outputs are preserved in `.brief-logs/test-runs/`:
 ---
 
 ## Reproducibility
-
+**DEPRECATED**: some command changes have occurred, will have to derive new commands to reproduce
 To reproduce these tests:
 
 ```bash

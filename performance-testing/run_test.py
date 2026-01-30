@@ -26,6 +26,7 @@ Usage:
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -248,6 +249,10 @@ def make_setup_fn(config_name: str, dimension: TestDimension):
     """Create a setup function for a specific config/dimension combo."""
 
     def setup(work_dir: Path):
+        # Create per-clone venv so agents that run `source .venv/bin/activate`
+        # succeed, and any pip install goes into the clone's own venv.
+        _create_clone_venv(work_dir)
+
         # Copy .brief/ context data (descriptions, analysis) but not tasks or embeddings
         brief_src = PROJECT_ROOT / ".brief"
         brief_dst = work_dir / ".brief"
@@ -279,6 +284,32 @@ def make_setup_fn(config_name: str, dimension: TestDimension):
             _write_resume_scenario(work_dir, dimension.setup_tasks)
 
     return setup
+
+
+def _create_clone_venv(work_dir: Path):
+    """Create a venv in the clone and install the project into it.
+
+    Uses uv for speed (~1.5s total). This ensures:
+    - Agents that run `source .venv/bin/activate` succeed
+    - Any `pip install -e .` goes into the clone's venv, not system-wide
+    - `brief` and `python` resolve to the clone's own environment
+    """
+    venv_path = work_dir / ".venv"
+    result = subprocess.run(
+        ["uv", "venv", str(venv_path)],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"WARNING: Failed to create venv in {work_dir}: {result.stderr.strip()}")
+        return
+
+    result = subprocess.run(
+        ["uv", "pip", "install", "-e", ".", "--python", str(venv_path / "bin" / "python")],
+        cwd=work_dir,
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"WARNING: Failed to install into venv in {work_dir}: {result.stderr.strip()}")
 
 
 def _write_tasks(work_dir: Path, tasks: list):
@@ -377,6 +408,7 @@ def make_jobs(
                 settings_json={"hooks": config["hooks"]},
                 setup_fn=make_setup_fn(config_name, dimension),
                 disallowed_tools=["EnterPlanMode", "ExitPlanMode", "AskUserQuestion"],
+                env_overrides=None,  # Orchestrator auto-detects .venv in clone
                 metadata=metadata,
             )
             jobs.append(job)

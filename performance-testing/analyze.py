@@ -15,19 +15,27 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 
 
-def read_manifest(manifest_path: Path) -> list[dict]:
-    """Read manifest JSONL, return latest entry per job_id."""
+def read_manifest(manifest_path: Path, include_voided: bool = False) -> list[dict]:
+    """Read manifest JSONL, return latest entry per job_id.
+
+    Annotation entries (type=annotation) are applied to their referenced
+    job_id. By default, voided entries are excluded from results.
+    """
     if not manifest_path.exists():
         print(f"Manifest not found: {manifest_path}", file=sys.stderr)
         return []
 
     entries_by_id = {}
+    annotations_by_id = {}  # job_id -> latest annotation
+
     with manifest_path.open() as f:
         for line in f:
             line = line.strip()
@@ -35,11 +43,34 @@ def read_manifest(manifest_path: Path) -> list[dict]:
                 continue
             try:
                 entry = json.loads(line)
-                entries_by_id[entry["job_id"]] = entry
+                if entry.get("type") == "annotation":
+                    # Annotation entry — merge into existing annotations for this job
+                    ref_id = entry.get("job_id")
+                    if ref_id:
+                        if ref_id not in annotations_by_id:
+                            annotations_by_id[ref_id] = {}
+                        annotations_by_id[ref_id].update(entry)
+                else:
+                    entries_by_id[entry["job_id"]] = entry
             except (json.JSONDecodeError, KeyError):
                 continue
 
-    return list(entries_by_id.values())
+    # Apply annotations to entries
+    for job_id, annotation in annotations_by_id.items():
+        if job_id in entries_by_id:
+            entry = entries_by_id[job_id]
+            if annotation.get("void"):
+                entry["_voided"] = True
+                entry["_void_reason"] = annotation.get("note", "")
+            if annotation.get("flag"):
+                entry["_flag"] = annotation["flag"]
+            if annotation.get("note"):
+                entry["_note"] = annotation["note"]
+
+    results = list(entries_by_id.values())
+    if not include_voided:
+        results = [r for r in results if not r.get("_voided")]
+    return results
 
 
 def parse_claude_output(stdout_path: str) -> dict:
@@ -59,6 +90,13 @@ def parse_claude_output(stdout_path: str) -> dict:
     tool_counts = {}
     context_get_count = 0
     total_turns = 0
+    total_cost_usd = 0.0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cache_read_tokens = 0
+    total_cache_creation_tokens = 0
+    model_usage = {}
+    duration_api_ms = 0
 
     for line in content.split("\n"):
         if not line.strip():
@@ -85,6 +123,18 @@ def parse_claude_output(stdout_path: str) -> dict:
                             if "brief context get" in cmd or "brief q " in cmd:
                                 context_get_count += 1
 
+            # Extract cost/token data from result event
+            if event.get("type") == "result":
+                total_cost_usd = event.get("total_cost_usd", 0.0)
+                duration_api_ms = event.get("duration_api_ms", 0)
+                model_usage = event.get("modelUsage", {})
+                # Sum tokens across all models
+                for model_name, mu in model_usage.items():
+                    total_input_tokens += mu.get("inputTokens", 0)
+                    total_output_tokens += mu.get("outputTokens", 0)
+                    total_cache_read_tokens += mu.get("cacheReadInputTokens", 0)
+                    total_cache_creation_tokens += mu.get("cacheCreationInputTokens", 0)
+
         except json.JSONDecodeError:
             continue
 
@@ -95,6 +145,8 @@ def parse_claude_output(stdout_path: str) -> dict:
     exploration = context_get_count + read_count + grep_count + glob_count
     brief_ratio = context_get_count / exploration if exploration > 0 else 0.0
 
+    cost_by_model = {name: mu.get("costUSD", 0.0) for name, mu in model_usage.items()}
+
     return {
         "tool_counts": tool_counts,
         "context_get_count": context_get_count,
@@ -103,6 +155,14 @@ def parse_claude_output(stdout_path: str) -> dict:
         "glob_count": glob_count,
         "brief_ratio": brief_ratio,
         "total_turns": total_turns,
+        "total_cost_usd": total_cost_usd,
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+        "total_cache_read_tokens": total_cache_read_tokens,
+        "total_cache_creation_tokens": total_cache_creation_tokens,
+        "duration_api_ms": duration_api_ms,
+        "model_usage": model_usage,
+        "cost_by_model": cost_by_model,
     }
 
 
@@ -130,6 +190,13 @@ def analyze_entries(entries: list[dict]) -> list[dict]:
             "grep_count": metrics["grep_count"],
             "glob_count": metrics["glob_count"],
             "total_turns": metrics["total_turns"],
+            "total_cost_usd": metrics["total_cost_usd"],
+            "total_input_tokens": metrics["total_input_tokens"],
+            "total_output_tokens": metrics["total_output_tokens"],
+            "total_cache_read_tokens": metrics["total_cache_read_tokens"],
+            "total_cache_creation_tokens": metrics["total_cache_creation_tokens"],
+            "duration_api_ms": metrics["duration_api_ms"],
+            "cost_by_model": metrics.get("cost_by_model", {}),
         })
 
     return results
@@ -152,11 +219,11 @@ def print_config_comparison(results: list[dict]):
         print("No completed results to analyze.")
         return
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 120)
     print("RESULTS BY CONFIGURATION")
-    print("=" * 90)
-    print(f"{'Config':<22} {'Tests':<7} {'ctx_get':<8} {'R/G/G':<7} {'Avg Ratio':<11} {'Avg Duration':<12}")
-    print("-" * 90)
+    print("=" * 120)
+    print(f"{'Config':<22} {'Tests':<7} {'ctx_get':<8} {'R/G/G':<7} {'Avg Ratio':<11} {'Avg Dur':<9} {'Avg Cost':<10} {'AvgMain$':<10} {'AvgTool$':<10}")
+    print("-" * 120)
 
     rows = []
     for config in sorted(by_config.keys()):
@@ -165,10 +232,20 @@ def print_config_comparison(results: list[dict]):
         total_rgg = sum(r.get("read_count", 0) + r.get("grep_count", 0) + r.get("glob_count", 0) for r in runs)
         avg_ratio = sum(r.get("brief_ratio", 0) for r in runs) / len(runs)
         avg_duration = sum(r.get("duration_seconds", 0) for r in runs) / len(runs)
-        rows.append((config, len(runs), total_ctx, total_rgg, avg_ratio, avg_duration))
-        print(f"{config:<22} {len(runs):<7} {total_ctx:<8} {total_rgg:<7} {avg_ratio:<11.1%} {avg_duration:<12.1f}s")
+        avg_cost = sum(r.get("total_cost_usd", 0) for r in runs) / len(runs)
+        main_c = tool_c = 0.0
+        for r in runs:
+            for mname, mcost in r.get("cost_by_model", {}).items():
+                if "haiku" in mname.lower():
+                    tool_c += mcost
+                else:
+                    main_c += mcost
+        avg_main_cost = main_c / len(runs)
+        avg_tool_cost = tool_c / len(runs)
+        rows.append((config, len(runs), total_ctx, total_rgg, avg_ratio, avg_duration, avg_cost, avg_main_cost, avg_tool_cost))
+        print(f"{config:<22} {len(runs):<7} {total_ctx:<8} {total_rgg:<7} {avg_ratio:<11.1%} {avg_duration:<9.0f}s ${avg_cost:<9.2f} ${avg_main_cost:<9.2f} ${avg_tool_cost:<9.2f}")
 
-    print("=" * 90)
+    print("=" * 120)
 
     # Best/worst
     if len(rows) >= 2:
@@ -332,6 +409,12 @@ def print_detail(results: list[dict], job_id: str):
         return
 
     print(f"\nJob: {entry['job_id']}")
+    if entry.get("_voided"):
+        print(f"*** VOIDED: {entry.get('_void_reason', 'no reason')} ***")
+    if entry.get("_flag"):
+        print(f"FLAG: {entry['_flag']}")
+    if entry.get("_note"):
+        print(f"Note: {entry['_note']}")
     print(f"Status: {entry.get('status', 'unknown')}")
     print(f"Config: {entry.get('metadata', {}).get('config_name', 'N/A')}")
     print(f"Dimension: {entry.get('metadata', {}).get('dimension_name', 'N/A')}")
@@ -348,6 +431,19 @@ def print_detail(results: list[dict], job_id: str):
         print(f"  Read: {m.get('read_count', 0)}")
         print(f"  Grep: {m.get('grep_count', 0)}")
         print(f"  Glob: {m.get('glob_count', 0)}")
+        print(f"\nCost & tokens:")
+        print(f"  Total cost: ${m.get('total_cost_usd', 0):.4f}")
+        print(f"  Output tokens: {m.get('total_output_tokens', 0):,}")
+        print(f"  Input tokens: {m.get('total_input_tokens', 0):,}")
+        print(f"  Cache read tokens: {m.get('total_cache_read_tokens', 0):,}")
+        print(f"  Cache creation tokens: {m.get('total_cache_creation_tokens', 0):,}")
+        print(f"  API duration: {m.get('duration_api_ms', 0) / 1000:.1f}s")
+        if m.get("model_usage"):
+            print(f"  Per-model breakdown:")
+            for model, mu in sorted(m["model_usage"].items()):
+                print(f"    {model}: ${mu.get('costUSD', 0):.4f} "
+                      f"(in={mu.get('inputTokens', 0):,} out={mu.get('outputTokens', 0):,} "
+                      f"cache_read={mu.get('cacheReadInputTokens', 0):,})")
 
     if entry.get("error"):
         print(f"\nError: {entry['error']}")
@@ -390,16 +486,61 @@ def print_failures(results: list[dict]):
 # MAIN
 # =============================================================================
 
+def annotate_manifest(manifest_path: Path, job_id: str,
+                      void: bool = False, flag: str = None, note: str = None):
+    """Append an annotation entry to the manifest for a given job_id."""
+    entry = {
+        "type": "annotation",
+        "job_id": job_id,
+        "timestamp": datetime.now().isoformat(),
+    }
+    if void:
+        entry["void"] = True
+    if flag:
+        entry["flag"] = flag
+    if note:
+        entry["note"] = note
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with manifest_path.open("a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+    print(f"Annotated {job_id}:", end="")
+    if void:
+        print(" VOIDED", end="")
+    if flag:
+        print(f" flag={flag}", end="")
+    if note:
+        print(f" note=\"{note}\"", end="")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze Brief performance test results",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("manifest", nargs="?",
+    sub = parser.add_subparsers(dest="command")
+
+    # Default (no subcommand) and explicit "report"
+    report_parser = sub.add_parser("report", help="Generate analysis report (default)")
+    for p in [parser, report_parser]:
+        p.add_argument("manifest", nargs="?",
                         default="performance-testing/results/manifest.jsonl",
                         help="Path to manifest JSONL")
-    parser.add_argument("--detail", help="Show detail for a specific job ID")
-    parser.add_argument("--matrix", action="store_true", help="Show full config x dimension matrix")
+        p.add_argument("--detail", help="Show detail for a specific job ID")
+        p.add_argument("--matrix", action="store_true", help="Show full config x dimension matrix")
+        p.add_argument("--include-voided", action="store_true",
+                        help="Include voided tests in analysis")
+
+    # Annotate subcommand
+    ann = sub.add_parser("annotate", help="Add annotation to a test in the manifest")
+    ann.add_argument("job_id", help="Job ID to annotate (supports prefix match)")
+    ann.add_argument("--manifest", default="performance-testing/results/manifest.jsonl",
+                     help="Path to manifest JSONL")
+    ann.add_argument("--void", action="store_true", help="Mark test as voided (excluded from analysis)")
+    ann.add_argument("--flag", help="Flag label (e.g. 'compromised', 'review', 'development')")
+    ann.add_argument("--note", help="Free-text note about this test")
 
     args = parser.parse_args()
 
@@ -407,7 +548,21 @@ def main():
     if not manifest_path.is_absolute():
         manifest_path = PROJECT_ROOT / manifest_path
 
-    entries = read_manifest(manifest_path)
+    if args.command == "annotate":
+        # Resolve prefix match for job_id
+        job_id = _resolve_job_id(manifest_path, args.job_id)
+        if not job_id:
+            return
+        if not args.void and not args.flag and not args.note:
+            print("Error: provide at least one of --void, --flag, or --note", file=sys.stderr)
+            sys.exit(1)
+        annotate_manifest(manifest_path, job_id,
+                          void=args.void, flag=args.flag, note=args.note)
+        return
+
+    # Report mode (default)
+    include_voided = getattr(args, "include_voided", False)
+    entries = read_manifest(manifest_path, include_voided=include_voided)
     if not entries:
         print("No entries in manifest.")
         return
@@ -415,9 +570,19 @@ def main():
     results = analyze_entries(entries)
 
     completed = [r for r in results if r.get("status") == "completed"]
+    voided_count = len([r for r in results if r.get("_voided")])
     total = len(results)
     print(f"Manifest: {manifest_path}")
-    print(f"Total entries: {total} ({len(completed)} completed)")
+    print(f"Total entries: {total} ({len(completed)} completed)", end="")
+    if voided_count > 0 and include_voided:
+        print(f" [{voided_count} voided - included]", end="")
+    elif voided_count > 0:
+        # Count voided from full read
+        all_entries = read_manifest(manifest_path, include_voided=True)
+        real_voided = len([r for r in all_entries if r.get("_voided")])
+        if real_voided > 0:
+            print(f" [{real_voided} voided - excluded]", end="")
+    print()
 
     if args.detail:
         print_detail(results, args.detail)
@@ -431,6 +596,26 @@ def main():
         print_full_matrix(results)
 
     print_failures(results)
+
+
+def _resolve_job_id(manifest_path: Path, prefix: str) -> Optional[str]:
+    """Resolve a job_id prefix to a full job_id. Returns None if ambiguous."""
+    all_entries = read_manifest(manifest_path, include_voided=True)
+    matches = [e["job_id"] for e in all_entries if e["job_id"].startswith(prefix)]
+
+    if len(matches) == 0:
+        print(f"Error: no job matching '{prefix}'", file=sys.stderr)
+        return None
+    elif len(matches) == 1:
+        return matches[0]
+    else:
+        # Check for exact match
+        if prefix in matches:
+            return prefix
+        print(f"Error: ambiguous prefix '{prefix}', matches:", file=sys.stderr)
+        for m in matches[:10]:
+            print(f"  {m}", file=sys.stderr)
+        return None
 
 
 if __name__ == "__main__":

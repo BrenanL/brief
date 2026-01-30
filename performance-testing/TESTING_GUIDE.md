@@ -126,6 +126,34 @@ python performance-testing/analyze.py --detail baseline-pretool__feature-additio
 
 Shows full tool counts, metrics, and file paths for one job.
 
+### Including Voided Tests
+
+By default, voided tests are excluded from analysis. To include them:
+
+```bash
+python performance-testing/analyze.py --include-voided
+```
+
+### Annotating Tests
+
+Mark tests as voided, flagged, or add notes without deleting data:
+
+```bash
+# Void a test (excludes from analysis)
+python performance-testing/analyze.py annotate <job-id> --void
+
+# Flag a test (e.g. compromised, review)
+python performance-testing/analyze.py annotate <job-id> --flag compromised
+
+# Add a note
+python performance-testing/analyze.py annotate <job-id> --note "venv was missing during this run"
+
+# Combine
+python performance-testing/analyze.py annotate <job-id> --void --flag development --note "test run"
+```
+
+Job IDs support prefix matching — you don't need the full timestamp suffix.
+
 ## Key Metrics
 
 ### Brief Ratio
