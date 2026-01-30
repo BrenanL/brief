@@ -340,33 +340,44 @@ def make_jobs(
     max_turns: int = 25,
     max_budget: float = 2.0,
     timeout: int = 600,
+    model: str = None,
 ) -> list[ClaudeJob]:
     """Generate ClaudeJob instances for each config x dimension combo."""
+    # Batch timestamp ensures unique job IDs across runs
+    batch_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     jobs = []
     for config_name in configs:
         config = CONFIGS[config_name]
         for dim_id in dimensions:
             dimension = DIMENSIONS[dim_id]
 
+            metadata = {
+                "config_name": config_name,
+                "config_description": config["description"],
+                "dimension_id": dim_id,
+                "dimension_name": dimension.name,
+                "dimension_description": dimension.description,
+                "prompt": dimension.prompt,
+            }
+            # Store optional params only when specified
+            if model:
+                metadata["model"] = model
+
             job = ClaudeJob(
-                job_id=f"{config_name}__{dim_id}",
+                job_id=f"{config_name}__{dim_id}__{batch_ts}",
                 prompt=dimension.prompt,
                 repo_path=str(PROJECT_ROOT),
                 repo_ref="HEAD",
                 max_turns=max_turns,
                 max_budget=max_budget,
                 timeout=timeout,
+                model=model,
                 claude_md_source=str(PROJECT_ROOT / config["claude_md"]),
                 settings_json={"hooks": config["hooks"]},
                 setup_fn=make_setup_fn(config_name, dimension),
-                metadata={
-                    "config_name": config_name,
-                    "config_description": config["description"],
-                    "dimension_id": dim_id,
-                    "dimension_name": dimension.name,
-                    "dimension_description": dimension.description,
-                    "prompt": dimension.prompt,
-                },
+                disallowed_tools=["EnterPlanMode", "ExitPlanMode", "AskUserQuestion"],
+                metadata=metadata,
             )
             jobs.append(job)
 
@@ -452,6 +463,7 @@ def cmd_run(args):
         max_turns=args.max_turns or defaults.get("max_turns", 25),
         max_budget=args.max_budget or defaults.get("max_budget", 2.0),
         timeout=args.timeout or defaults.get("timeout", 600),
+        model=args.model,
     )
 
     print(f"Queuing {len(jobs)} tests ({len(configs)} configs x {len(dimensions)} dimensions)")
@@ -498,6 +510,7 @@ def main():
     run_parser.add_argument("--configs", nargs="+", default=["all"], help="Configs to test (or 'all')")
     run_parser.add_argument("--dimensions", nargs="+", default=["all"], help="Dimensions to test (or 'all')")
     run_parser.add_argument("--workers", type=int, help="Max parallel workers")
+    run_parser.add_argument("--model", type=str, help="Model to use (e.g. sonnet, opus, haiku)")
     run_parser.add_argument("--max-turns", type=int, help="Max agentic turns per test")
     run_parser.add_argument("--max-budget", type=float, help="Max budget in USD per test")
     run_parser.add_argument("--timeout", type=int, help="Timeout in seconds per test")

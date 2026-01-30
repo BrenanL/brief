@@ -360,6 +360,18 @@ def print_detail(results: list[dict], job_id: str):
 def print_failures(results: list[dict]):
     """Print summary of failed jobs."""
     failed = [r for r in results if r.get("status") in ("failed", "killed", "error")]
+    rate_limited = [r for r in results if r.get("status") == "rate_limited"]
+
+    if rate_limited:
+        print(f"\n{'='*90}")
+        print(f"RATE LIMITED ({len(rate_limited)})")
+        print(f"{'='*90}")
+        for r in rate_limited:
+            config = r.get("metadata", {}).get("config_name", "?")
+            dim = r.get("metadata", {}).get("dimension_id", "?")
+            error = r.get("error", "")[:100]
+            print(f"  {config}/{dim}: {error}")
+
     if not failed:
         return
 
