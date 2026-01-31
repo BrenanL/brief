@@ -79,3 +79,4 @@ baml_client/
 .brief-logs/
 *.jsonl.bak
 private/
+settings.local.json

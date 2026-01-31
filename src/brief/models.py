@@ -200,7 +200,7 @@ class BriefConfig(BaseModel):
     """Configuration for Brief."""
 
     version: str = "0.1.0"
-    default_model: str = "gemini-2.5-flash"
+    default_model: str = "gpt-5-mini"
     auto_analyze: bool = False
     use_gitignore: bool = True  # Use .gitignore patterns in addition to exclude_patterns
     command_logging: bool = True  # Log command invocations to .brief-logs/

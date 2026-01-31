@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Your Name", email = "you@example.com"}
+    {name = "BrenanL", email = "BrenanL@users.noreply.github.com"}
 ]
 keywords = ["ai", "coding", "context", "agents", "development"]
 classifiers = [
@@ -52,9 +52,9 @@ all = [
 brief = "brief.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/brief"
-Repository = "https://github.com/yourusername/brief"
-Documentation = "https://github.com/yourusername/brief#readme"
+Homepage = "https://github.com/BrenanL/brief"
+Repository = "https://github.com/BrenanL/brief"
+Documentation = "https://github.com/BrenanL/brief#readme"
 
 [tool.setuptools.packages.find]
 where = ["src"]
