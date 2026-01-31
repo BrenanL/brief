@@ -1,0 +1,10 @@
+{
+    "temp_dir": "/home/user/tmp/brief-performance-testing",
+    "manifest_path": "performance-testing/results/manifest.jsonl",
+    "max_workers": 2,
+    "defaults": {
+        "max_turns": 25,
+        "max_budget": 2.0,
+        "timeout": 600
+    }
+}

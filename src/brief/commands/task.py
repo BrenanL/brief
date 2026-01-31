@@ -1,13 +1,19 @@
 """Task management commands for Brief."""
 import typer
+import shutil
 from pathlib import Path
+from datetime import datetime
 from typing import Optional
-from ..config import get_brief_path
-from ..storage import read_json
+from ..config import get_brief_path, TASKS_FILE
+from ..storage import read_json, read_jsonl, write_jsonl
 from ..tasks.manager import TaskManager
 from ..models import TaskStatus, TaskStepStatus
 
 app = typer.Typer()
+
+# Archive directory structure
+ARCHIVES_DIR = "archives"
+TASK_ARCHIVES_DIR = "archives/tasks"
 
 
 def _check_tasks_enabled(brief_path: Path) -> bool:
@@ -511,3 +517,244 @@ def task_active(
 
     if task.notes:
         typer.echo(f"Latest note: {task.notes[-1]}")
+
+
+@app.command("clear")
+def task_clear(
+    done_only: bool = typer.Option(False, "--done-only", "-d", help="Only clear completed tasks"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+) -> None:
+    """Clear tasks from the task list.
+
+    By default, clears ALL tasks. Use --done-only to keep pending/in-progress tasks.
+
+    Example:
+        brief task clear              # Clear all tasks (with confirmation)
+        brief task clear --yes        # Clear all without confirmation
+        brief task clear --done-only  # Only clear completed tasks
+    """
+    brief_path = get_brief_path(base)
+    if not brief_path.exists():
+        typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
+    manager = TaskManager(brief_path)
+    tasks = manager.list_tasks()
+
+    if not tasks:
+        typer.echo("No tasks to clear.")
+        return
+
+    if done_only:
+        tasks_to_clear = [t for t in tasks if t.status == TaskStatus.DONE]
+        tasks_to_keep = [t for t in tasks if t.status != TaskStatus.DONE]
+        action = f"Clear {len(tasks_to_clear)} completed tasks (keeping {len(tasks_to_keep)} active)?"
+    else:
+        tasks_to_clear = tasks
+        tasks_to_keep = []
+        action = f"Clear ALL {len(tasks_to_clear)} tasks?"
+
+    if not tasks_to_clear:
+        typer.echo("No tasks match the criteria to clear.")
+        return
+
+    if not yes:
+        confirm = typer.confirm(action)
+        if not confirm:
+            typer.echo("Cancelled.")
+            return
+
+    # Write remaining tasks (or empty list)
+    write_jsonl(brief_path / TASKS_FILE, tasks_to_keep)
+
+    # Clear active task if we cleared all or if active task was cleared
+    if not done_only:
+        manager.clear_active_task()
+    else:
+        active = manager.get_active_task()
+        if active and active.status == TaskStatus.DONE:
+            manager.clear_active_task()
+
+    typer.echo(f"Cleared {len(tasks_to_clear)} tasks.")
+    if tasks_to_keep:
+        typer.echo(f"Kept {len(tasks_to_keep)} tasks.")
+
+
+# Archive subcommand group
+archive_app = typer.Typer(help="Archive task management")
+app.add_typer(archive_app, name="archive")
+
+
+@archive_app.callback(invoke_without_command=True)
+def archive_callback(
+    ctx: typer.Context,
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Archive name (default: timestamp)"),
+    link: Optional[Path] = typer.Option(None, "--link", "-l", help="Link and copy a plan file to the archive"),
+    clear: bool = typer.Option(False, "--clear", "-c", help="Clear tasks after archiving"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation for --clear"),
+    base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+) -> None:
+    """Archive current tasks to .brief/archives/tasks/.
+
+    Creates a snapshot of the current tasks.jsonl file with optional metadata.
+    Use --link to also copy a related plan file into the archive.
+
+    Example:
+        brief task archive                           # Archive with timestamp name
+        brief task archive --name "sprint-01"        # Custom name
+        brief task archive --link docs/TASK_PLAN.md  # Include plan file
+        brief task archive --clear                   # Archive then clear tasks
+        brief task archive list                      # List all archives
+    """
+    # If a subcommand was invoked, don't run the archive action
+    if ctx.invoked_subcommand is not None:
+        return
+
+    # Run the archive action
+    _do_archive(name=name, link=link, clear=clear, yes=yes, base=base)
+
+
+def _do_archive(
+    name: Optional[str],
+    link: Optional[Path],
+    clear: bool,
+    yes: bool,
+    base: Path,
+) -> None:
+    """Implementation of archive action."""
+    brief_path = get_brief_path(base)
+    if not brief_path.exists():
+        typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    if not _check_tasks_enabled(brief_path):
+        raise typer.Exit(1)
+
+    manager = TaskManager(brief_path)
+    tasks = manager.list_tasks()
+
+    if not tasks:
+        typer.echo("No tasks to archive.")
+        return
+
+    # Create archive directory
+    archive_dir = brief_path / TASK_ARCHIVES_DIR
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate archive name
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    if name:
+        archive_name = f"{timestamp}_{name}"
+    else:
+        archive_name = timestamp
+
+    # Create archive files
+    archive_tasks_file = archive_dir / f"{archive_name}.jsonl"
+    archive_meta_file = archive_dir / f"{archive_name}.meta.json"
+
+    # Check if archive already exists
+    if archive_tasks_file.exists():
+        typer.echo(f"Archive already exists: {archive_tasks_file.name}", err=True)
+        raise typer.Exit(1)
+
+    # Count task statuses
+    status_counts = {
+        "pending": len([t for t in tasks if t.status == TaskStatus.PENDING]),
+        "in_progress": len([t for t in tasks if t.status == TaskStatus.IN_PROGRESS]),
+        "done": len([t for t in tasks if t.status == TaskStatus.DONE]),
+        "blocked": len([t for t in tasks if t.status == TaskStatus.BLOCKED]),
+    }
+
+    # Copy tasks to archive
+    shutil.copy(brief_path / TASKS_FILE, archive_tasks_file)
+    typer.echo(f"Archived {len(tasks)} tasks to: {archive_tasks_file.relative_to(brief_path)}")
+
+    # Handle linked plan file
+    linked_plan_name = None
+    if link:
+        if not link.exists():
+            typer.echo(f"Warning: Link file not found: {link}", err=True)
+        else:
+            # Copy plan file to archive directory with matching name
+            plan_ext = link.suffix
+            linked_plan_name = f"{archive_name}_plan{plan_ext}"
+            archive_plan_file = archive_dir / linked_plan_name
+            shutil.copy(link, archive_plan_file)
+            typer.echo(f"Linked plan file: {archive_plan_file.relative_to(brief_path)}")
+
+    # Write metadata
+    import json
+    meta = {
+        "archived_at": datetime.now().isoformat(),
+        "name": name or archive_name,
+        "task_count": len(tasks),
+        "status_counts": status_counts,
+        "linked_plan": linked_plan_name,
+        "original_plan_path": str(link) if link else None,
+    }
+    archive_meta_file.write_text(json.dumps(meta, indent=2))
+
+    # Clear tasks if requested
+    if clear:
+        if not yes:
+            confirm = typer.confirm(f"Clear all {len(tasks)} tasks after archiving?")
+            if not confirm:
+                typer.echo("Tasks archived but not cleared.")
+                return
+
+        write_jsonl(brief_path / TASKS_FILE, [])
+        manager.clear_active_task()
+        typer.echo(f"Cleared {len(tasks)} tasks.")
+
+
+@archive_app.command("list")
+def archive_list(
+    base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+) -> None:
+    """List all task archives.
+
+    Shows archived task snapshots with their metadata.
+
+    Example:
+        brief task archive list
+    """
+    brief_path = get_brief_path(base)
+    if not brief_path.exists():
+        typer.echo("Error: Brief not initialized.", err=True)
+        raise typer.Exit(1)
+
+    archive_dir = brief_path / TASK_ARCHIVES_DIR
+    if not archive_dir.exists():
+        typer.echo("No archives found.")
+        return
+
+    # Find all archive metadata files
+    meta_files = sorted(archive_dir.glob("*.meta.json"))
+    if not meta_files:
+        typer.echo("No archives found.")
+        return
+
+    import json
+    typer.echo(f"Task Archives ({len(meta_files)}):")
+    typer.echo("-" * 60)
+
+    for meta_file in meta_files:
+        try:
+            meta = json.loads(meta_file.read_text())
+            name = meta.get("name", meta_file.stem.replace(".meta", ""))
+            count = meta.get("task_count", "?")
+            archived_at = meta.get("archived_at", "?")[:10]  # Just date
+            status = meta.get("status_counts", {})
+            done = status.get("done", 0)
+            linked = meta.get("linked_plan")
+
+            status_str = f"({done}/{count} done)"
+            link_str = f" [linked: {linked}]" if linked else ""
+
+            typer.echo(f"  {name} - {count} tasks {status_str} - {archived_at}{link_str}")
+        except Exception:
+            typer.echo(f"  {meta_file.stem} (error reading metadata)")

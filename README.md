@@ -29,6 +29,21 @@ Agent: brief context get "add logout button to header"
 # Agent implements correctly because it understands the system
 ```
 
+## Performance
+
+Tested with Claude Code across 63 automated test runs (7 configurations x 9 task dimensions):
+
+| Metric | Without Brief | With Brief | Improvement |
+|--------|--------------|------------|-------------|
+| Task completion time | 260s | 182s | **30% faster** |
+| Output tokens | 14,768 | 8,065 | **45% fewer** |
+| Tool-model (Haiku) cost | $0.10 | $0.02 | **78% cheaper** |
+| Read/Grep/Glob calls | 18 | 6 | **66% fewer** |
+
+Brief replaces 5-25 manual file exploration calls with 1-2 structured `context get` calls. Agents spend less time searching and more time coding.
+
+Full methodology and results: [`performance-testing/docs/performance-test-findings-v1.md`](performance-testing/docs/performance-test-findings-v1.md)
+
 ## Quick Start
 
 ```bash

@@ -20,15 +20,17 @@
 //   }
 
 // Generator config - outputs to brief/baml_client/
-// BAML always creates a "baml_client" folder, so output_dir=".." creates brief/baml_client/
 generator target {
   output_type "python/pydantic"
   output_dir ".."
   version "0.217.0"
 }
 
-// OpenAI clients
-client<llm> GPT5Mini {
+// =============================================================================
+// OpenAI Clients
+// =============================================================================
+
+client<llm> GPT4oMini {
   provider openai
   options {
     model "gpt-4o-mini"
@@ -46,7 +48,19 @@ client<llm> GPT4o {
   }
 }
 
-// Anthropic clients
+// Note: gpt-5-mini only supports temperature=1.0
+client<llm> GPT5Mini {
+  provider openai
+  options {
+    model "gpt-5-mini"
+    api_key env.OPENAI_API_KEY
+  }
+}
+
+// =============================================================================
+// Anthropic Clients
+// =============================================================================
+
 client<llm> ClaudeSonnet {
   provider anthropic
   options {
@@ -65,33 +79,77 @@ client<llm> ClaudeHaiku {
   }
 }
 
-// Google clients (for future use)
-client<llm> GeminiFlash {
+// =============================================================================
+// Google Gemini Clients
+// Note: For google-ai, temperature goes in generationConfig, not at top level
+// =============================================================================
+
+client<llm> Gemini20Flash {
   provider google-ai
   options {
     model "gemini-2.0-flash"
     api_key env.GOOGLE_API_KEY
-    temperature 0.1
+    generationConfig {
+      temperature 0.1
+    }
+  }
+}
+
+client<llm> Gemini20FlashLite {
+  provider google-ai
+  options {
+    model "gemini-2.0-flash-lite"
+    api_key env.GOOGLE_API_KEY
+    generationConfig {
+      temperature 0.1
+    }
+  }
+}
+
+client<llm> Gemini25FlashLite {
+  provider google-ai
+  options {
+    model "gemini-2.5-flash-lite"
+    api_key env.GOOGLE_API_KEY
+    generationConfig {
+      temperature 0.1
+    }
+  }
+}
+
+client<llm> Gemini25Flash {
+  provider google-ai
+  options {
+    model "gemini-2.5-flash"
+    api_key env.GOOGLE_API_KEY
+    generationConfig {
+      temperature 0.1
+    }
+  }
+}
+
+client<llm> Gemini3FlashPreview {
+  provider google-ai
+  options {
+    model "gemini-3-flash-preview"
+    api_key env.GOOGLE_API_KEY
+    generationConfig {
+      temperature 0.1
+    }
   }
 }
 
 // =============================================================================
-// DEFAULT CLIENT - Modify this to change your LLM provider
+// DEFAULT CLIENT - Used when no specific model is requested
 // =============================================================================
-// Currently using: OpenAI GPT-4o-mini
-// To switch providers, change 'provider' and 'model' below, then run:
-//   baml-cli generate
-//
-// Provider options:
-//   - openai (models: gpt-4o-mini, gpt-4o)
-//   - anthropic (models: claude-3-5-haiku-20241022, claude-sonnet-4-20250514)
-//   - google-ai (models: gemini-2.0-flash)
-// =============================================================================
+// This is the fallback client. Runtime model selection overrides this.
 client<llm> Default {
-  provider openai
+  provider google-ai
   options {
-    model "gpt-4o-mini"
-    api_key env.OPENAI_API_KEY
-    temperature 0.1
+    model "gemini-2.5-flash"
+    api_key env.GOOGLE_API_KEY
+    generationConfig {
+      temperature 0.1
+    }
   }
 }

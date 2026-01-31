@@ -1,12 +1,24 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Read|Grep|Glob",
+        "matcher": "startup|resume|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "/home/user/dev/brief/scripts/brief-hook-warn.sh",
+            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto|manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/pre-compact.sh",
             "timeout": 5
           }
         ]
@@ -18,7 +30,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '\n════════════════════════════════════════════════════\n  BRIEF PROJECT: Use `brief context get` for code\n  exploration instead of Read/Grep/Glob. Returns\n  descriptions, signatures, and related files.\n════════════════════════════════════════════════════\n'"
+            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/user-prompt.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/pre-tool-use.sh",
+            "timeout": 5
           }
         ]
       }
