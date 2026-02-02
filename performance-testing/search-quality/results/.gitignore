@@ -1,0 +1,4 @@
+# Raw JSON result files are large and reproducible — re-run the benchmark to regenerate
+# The index.json and analysis markdown files are committed as permanent records
+*.json
+!index.json

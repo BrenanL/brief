@@ -1,0 +1,198 @@
+{
+  "runs": [
+    {
+      "file": "2026-02-01_145334.json",
+      "timestamp": "2026-02-01T14:53:34.304801",
+      "corpus": "brief",
+      "corpus_description": "",
+      "configs_run": [
+        "keyword-only",
+        "lite-embeddings",
+        "full-embeddings"
+      ],
+      "query_count": 25,
+      "tiers_run": [
+        "code_terms",
+        "natural_language",
+        "abstract"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        },
+        "lite-embeddings": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        },
+        "full-embeddings": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        }
+      }
+    },
+    {
+      "file": "2026-02-01_145412.json",
+      "timestamp": "2026-02-01T14:54:12.282227",
+      "corpus": "brief",
+      "corpus_description": "",
+      "configs_run": [
+        "keyword-only",
+        "lite-embeddings",
+        "full-embeddings"
+      ],
+      "query_count": 25,
+      "tiers_run": [
+        "code_terms",
+        "natural_language",
+        "abstract"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        },
+        "lite-embeddings": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        },
+        "full-embeddings": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        }
+      }
+    },
+    {
+      "file": "2026-02-01_145607.json",
+      "timestamp": "2026-02-01T14:56:07.304596",
+      "corpus": "brief",
+      "corpus_description": "",
+      "configs_run": [
+        "keyword-only",
+        "lite-embeddings",
+        "full-embeddings"
+      ],
+      "query_count": 25,
+      "tiers_run": [
+        "code_terms",
+        "natural_language",
+        "abstract"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.628,
+          "hit_rate": 0.8
+        },
+        "lite-embeddings": {
+          "mrr": 0.7468253968253968,
+          "hit_rate": 0.8
+        },
+        "full-embeddings": {
+          "mrr": 0.7487142857142857,
+          "hit_rate": 0.88
+        }
+      }
+    },
+    {
+      "file": "langchain_2026-02-01_172242.json",
+      "timestamp": "2026-02-01T17:22:42.795201",
+      "corpus": "langchain",
+      "corpus_description": "LangChain framework (~1600 source files, monorepo with core, langchain, partners packages)",
+      "configs_run": [
+        "keyword-only"
+      ],
+      "query_count": 25,
+      "tiers_run": [
+        "code_terms",
+        "natural_language",
+        "abstract"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.5754761904761905,
+          "hit_rate": 0.6
+        }
+      }
+    },
+    {
+      "file": "langchain_2026-02-01_173702.json",
+      "timestamp": "2026-02-01T17:37:02.089073",
+      "corpus": "langchain",
+      "corpus_description": "LangChain framework (~1600 source files, monorepo with core, langchain, partners packages)",
+      "configs_run": [
+        "keyword-only",
+        "lite-embeddings"
+      ],
+      "query_count": 25,
+      "tiers_run": [
+        "code_terms",
+        "natural_language",
+        "abstract"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.5754761904761905,
+          "hit_rate": 0.6
+        },
+        "lite-embeddings": {
+          "mrr": 0.7373333333333334,
+          "hit_rate": 0.8
+        }
+      }
+    },
+    {
+      "file": "langchain-agent_2026-02-01_180556.json",
+      "timestamp": "2026-02-01T18:05:56.634500",
+      "corpus": "langchain-agent",
+      "corpus_description": "LangChain framework \u2014 agent-realistic queries simulating how Claude Code would query brief context get after receiving user instructions",
+      "configs_run": [
+        "keyword-only",
+        "lite-embeddings"
+      ],
+      "query_count": 65,
+      "tiers_run": [
+        "implementation_location",
+        "interface_pattern",
+        "feature_modification",
+        "conceptual_task"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.37595238095238087,
+          "hit_rate": 0.5692307692307692
+        },
+        "lite-embeddings": {
+          "mrr": 0.620915750915751,
+          "hit_rate": 0.7846153846153846
+        }
+      }
+    },
+    {
+      "file": "langchain-agent_2026-02-01_184135.json",
+      "timestamp": "2026-02-01T18:41:35.722261",
+      "corpus": "langchain-agent",
+      "corpus_description": "LangChain framework \u2014 agent-realistic queries simulating how Claude Code would query brief context get after receiving user instructions",
+      "configs_run": [
+        "keyword-only",
+        "hybrid"
+      ],
+      "query_count": 65,
+      "tiers_run": [
+        "implementation_location",
+        "interface_pattern",
+        "feature_modification",
+        "conceptual_task"
+      ],
+      "summary": {
+        "keyword-only": {
+          "mrr": 0.37595238095238087,
+          "hit_rate": 0.5692307692307692
+        },
+        "hybrid": {
+          "mrr": 0.620915750915751,
+          "hit_rate": 0.7846153846153846
+        }
+      }
+    }
+  ]
+}

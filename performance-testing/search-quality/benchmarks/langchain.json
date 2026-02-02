@@ -1,0 +1,147 @@
+{
+  "corpus": "langchain",
+  "corpus_description": "LangChain framework (~1600 source files, monorepo with core, langchain, partners packages)",
+  "k": 5,
+  "tiers": {
+    "code_terms": {
+      "description": "Direct code terminology - class names and module names that keyword search should handle",
+      "queries": [
+        {
+          "query": "RunnablePassthrough",
+          "expected": ["libs/core/langchain_core/runnables/passthrough.py"],
+          "notes": "Direct class name match"
+        },
+        {
+          "query": "ChatPromptTemplate",
+          "expected": ["libs/core/langchain_core/prompts/chat.py"],
+          "notes": "Core prompt template class"
+        },
+        {
+          "query": "BaseRetriever",
+          "expected": ["libs/core/langchain_core/retrievers.py"],
+          "notes": "Abstract base class for retrievers"
+        },
+        {
+          "query": "JsonOutputParser",
+          "expected": ["libs/core/langchain_core/output_parsers/json.py"],
+          "notes": "JSON output parsing"
+        },
+        {
+          "query": "VectorStore",
+          "expected": ["libs/core/langchain_core/vectorstores/base.py"],
+          "notes": "Abstract vector store interface"
+        },
+        {
+          "query": "BaseTool",
+          "expected": ["libs/core/langchain_core/tools/base.py"],
+          "notes": "Base class for tools"
+        },
+        {
+          "query": "BaseChatModel",
+          "expected": ["libs/core/langchain_core/language_models/chat_models.py"],
+          "notes": "Base class for chat models"
+        },
+        {
+          "query": "AIMessage",
+          "expected": ["libs/core/langchain_core/messages/ai.py"],
+          "notes": "AI message class with tool calls"
+        },
+        {
+          "query": "ConversationBufferMemory",
+          "expected": ["libs/langchain/langchain_classic/memory/buffer.py"],
+          "notes": "Buffer memory for conversation history"
+        },
+        {
+          "query": "ChatAnthropic",
+          "expected": ["libs/partners/anthropic/langchain_anthropic/chat_models.py"],
+          "notes": "Anthropic chat model integration"
+        }
+      ]
+    },
+    "natural_language": {
+      "description": "Descriptions of what code does, phrased naturally without exact class names",
+      "queries": [
+        {
+          "query": "how to split documents into chunks",
+          "expected": ["libs/text-splitters/langchain_text_splitters/character.py"],
+          "notes": "CharacterTextSplitter for chunking text"
+        },
+        {
+          "query": "generate multiple search queries from one question",
+          "expected": ["libs/langchain/langchain_classic/retrievers/multi_query.py"],
+          "notes": "MultiQueryRetriever generates query variations"
+        },
+        {
+          "query": "run chains in sequence with outputs feeding to inputs",
+          "expected": ["libs/langchain/langchain_classic/chains/sequential.py"],
+          "notes": "SequentialChain pipes outputs to inputs"
+        },
+        {
+          "query": "parse output into pydantic models",
+          "expected": ["libs/core/langchain_core/output_parsers/pydantic.py"],
+          "notes": "PydanticOutputParser for structured parsing"
+        },
+        {
+          "query": "select examples based on similarity to input",
+          "expected": ["libs/core/langchain_core/example_selectors/semantic_similarity.py"],
+          "notes": "Semantic similarity example selection"
+        },
+        {
+          "query": "embed text into vectors",
+          "expected": ["libs/core/langchain_core/embeddings/embeddings.py"],
+          "notes": "Abstract Embeddings interface"
+        },
+        {
+          "query": "conditional branching in runnable chains",
+          "expected": ["libs/core/langchain_core/runnables/branch.py"],
+          "notes": "RunnableBranch for conditional execution"
+        },
+        {
+          "query": "route inputs to different chains",
+          "expected": ["libs/langchain/langchain_classic/chains/router/base.py"],
+          "notes": "RouterChain for directing inputs"
+        },
+        {
+          "query": "manage callbacks for llm runs",
+          "expected": ["libs/core/langchain_core/callbacks/manager.py"],
+          "notes": "Callback management for chains and LLMs"
+        },
+        {
+          "query": "question answering over documents",
+          "expected": ["libs/langchain/langchain_classic/chains/retrieval_qa/base.py"],
+          "notes": "RetrievalQA chain for document QA"
+        }
+      ]
+    },
+    "abstract": {
+      "description": "Conceptual queries about problems the code solves, without implementation details",
+      "queries": [
+        {
+          "query": "add metadata and track individual documents",
+          "expected": ["libs/core/langchain_core/documents/base.py"],
+          "notes": "Document class with id and metadata fields"
+        },
+        {
+          "query": "evaluate model outputs against criteria",
+          "expected": ["libs/langchain/langchain_classic/evaluation/schema.py"],
+          "notes": "Evaluation interfaces and types"
+        },
+        {
+          "query": "create tools that accept structured arguments",
+          "expected": ["libs/core/langchain_core/tools/structured.py"],
+          "notes": "StructuredTool with schema-validated args"
+        },
+        {
+          "query": "provide dynamic examples in prompts",
+          "expected": ["libs/core/langchain_core/prompts/few_shot.py"],
+          "notes": "Few-shot prompt with example selectors"
+        },
+        {
+          "query": "store vectors in chroma database",
+          "expected": ["libs/partners/chroma/langchain_chroma/vectorstores.py"],
+          "notes": "Chroma vector store integration"
+        }
+      ]
+    }
+  }
+}

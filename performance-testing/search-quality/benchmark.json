@@ -1,0 +1,147 @@
+{
+  "corpus": "brief",
+  "corpus_description": "Brief's own codebase (~55 Python files)",
+  "k": 5,
+  "tiers": {
+    "code_terms": {
+      "description": "Direct code terminology - keyword search should handle these well",
+      "queries": [
+        {
+          "query": "task management",
+          "expected": ["src/brief/tasks/manager.py"],
+          "notes": "Direct class name match (TaskManager)"
+        },
+        {
+          "query": "AST parsing python files",
+          "expected": ["src/brief/analysis/parser.py"],
+          "notes": "Module name + function names"
+        },
+        {
+          "query": "embeddings database storage",
+          "expected": ["src/brief/retrieval/embeddings.py"],
+          "notes": "Module name + function names"
+        },
+        {
+          "query": "CLI entry point commands",
+          "expected": ["src/brief/cli.py"],
+          "notes": "CLI registration and app definition"
+        },
+        {
+          "query": "keyword search implementation",
+          "expected": ["src/brief/retrieval/search.py"],
+          "notes": "keyword_search function"
+        },
+        {
+          "query": "memory pattern storage",
+          "expected": ["src/brief/memory/store.py"],
+          "notes": "MemoryStore class"
+        },
+        {
+          "query": "contract detection conventions",
+          "expected": ["src/brief/contracts/detector.py"],
+          "notes": "ContractDetector class"
+        },
+        {
+          "query": "execution path tracing",
+          "expected": ["src/brief/tracing/tracer.py"],
+          "notes": "PathTracer class"
+        },
+        {
+          "query": "file description generation",
+          "expected": ["src/brief/generation/generator.py"],
+          "notes": "describe_file, generate_and_save_file_description"
+        },
+        {
+          "query": "JSONL storage utilities",
+          "expected": ["src/brief/storage.py"],
+          "notes": "read_jsonl, write_jsonl"
+        }
+      ]
+    },
+    "natural_language": {
+      "description": "Natural language queries - semantic search should help find these",
+      "queries": [
+        {
+          "query": "how does Brief find relevant code for a query",
+          "expected": ["src/brief/retrieval/search.py", "src/brief/retrieval/context.py"],
+          "notes": "hybrid_search, build_context_for_query"
+        },
+        {
+          "query": "generating natural language summaries of source code",
+          "expected": ["src/brief/generation/generator.py"],
+          "notes": "describe_file, describe_class, describe_function"
+        },
+        {
+          "query": "detecting naming conventions and patterns in a codebase",
+          "expected": ["src/brief/contracts/detector.py"],
+          "notes": "ContractDetector.detect_all"
+        },
+        {
+          "query": "storing and recalling project-specific knowledge",
+          "expected": ["src/brief/memory/store.py"],
+          "notes": "MemoryStore.remember, MemoryStore.recall"
+        },
+        {
+          "query": "building a package of context for an AI agent",
+          "expected": ["src/brief/retrieval/context.py"],
+          "notes": "build_context_for_query, ContextPackage"
+        },
+        {
+          "query": "tracking what the agent is currently working on",
+          "expected": ["src/brief/tasks/manager.py"],
+          "notes": "TaskManager, get_active_task"
+        },
+        {
+          "query": "how function calls flow through the system",
+          "expected": ["src/brief/tracing/tracer.py"],
+          "notes": "PathTracer, trace execution paths"
+        },
+        {
+          "query": "initial project setup and configuration wizard",
+          "expected": ["src/brief/commands/setup.py"],
+          "notes": "setup wizard command"
+        },
+        {
+          "query": "analyzing code structure without running it",
+          "expected": ["src/brief/analysis/parser.py", "src/brief/analysis/manifest.py"],
+          "notes": "PythonFileParser, ManifestBuilder"
+        },
+        {
+          "query": "managing which LLM model to use for descriptions",
+          "expected": ["src/brief/llm.py"],
+          "notes": "Model selection and configuration"
+        }
+      ]
+    },
+    "abstract": {
+      "description": "Abstract/conceptual queries - hardest, tests semantic understanding",
+      "queries": [
+        {
+          "query": "preventing the agent from losing its place after context resets",
+          "expected": ["src/brief/tasks/manager.py"],
+          "notes": "Task system enables resume after compaction"
+        },
+        {
+          "query": "making code follow project conventions automatically",
+          "expected": ["src/brief/contracts/detector.py", "src/brief/retrieval/context.py"],
+          "notes": "Contract detection + inclusion in context packages"
+        },
+        {
+          "query": "understanding how a feature is implemented end to end",
+          "expected": ["src/brief/tracing/tracer.py"],
+          "notes": "Execution path tracing shows call flow"
+        },
+        {
+          "query": "recovering from context window limitations",
+          "expected": ["src/brief/tasks/manager.py", "src/brief/commands/context.py"],
+          "notes": "Task notes + resume command"
+        },
+        {
+          "query": "giving AI agents the right information to write correct code",
+          "expected": ["src/brief/retrieval/context.py"],
+          "notes": "The core value prop - context package building"
+        }
+      ]
+    }
+  }
+}

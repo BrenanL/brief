@@ -8,7 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-*Nothing yet.*
+### Added
+- **Lite description generator** (`src/brief/generation/lite.py`) — generates structured markdown descriptions from AST data only (no LLM calls). Includes purpose, contents, role, dependencies, and exports. Used as the default description source for embeddings in first-time setup.
+- **`brief setup -d` full automated setup** — single command that initializes Brief, analyzes codebase, generates lite descriptions, creates embeddings (if OpenAI key available), adds .brief/ to .gitignore, and writes Brief workflow to CLAUDE.md. Replaces the previous multi-step setup.
+- **`brief init` now runs analysis** — `brief init` creates the directory structure AND analyzes the codebase in one step. No reason to separate these.
+- **`brief ctx` alias** — shortcut for `brief context get`, alongside existing `brief q`.
+- **"Did you mean?" suggestions** — running `brief task`, `brief context`, etc. without a subcommand now suggests common subcommands instead of showing a generic error.
+- **Automatic .gitignore management** — `brief init` and `brief setup` add `.brief/` and `.brief-logs/` to .gitignore if not already present.
+- **CLAUDE.md auto-configuration** — `brief setup -d` appends a Brief workflow section to CLAUDE.md (or creates it).
+- **Claude Code hooks auto-installation** — `brief setup -d` installs hook scripts to `.brief/hooks/` and configures `.claude/settings.json` with SessionStart, PreCompact, UserPromptSubmit, and PreToolUse hooks. Merges with existing settings.
+- **Claude Code permissions** — `brief setup -d` adds `Bash(brief:*)` to `.claude/settings.local.json` so brief commands don't require permission prompts.
+- **Search quality benchmark system** (`performance-testing/search-quality/`) — reusable tool for measuring search ranking quality across different configurations. Supports multiple corpora, tiered query sets, and permanent result archiving.
+- **Agent-realistic benchmark** — 65 queries across 4 tiers (implementation location, interface pattern, feature modification, conceptual task) tested against LangChain (1,665 files). Lite embeddings achieve 100% hit rate on implementation/feature queries.
+- **Parser test coverage** — 6 new tests for positional-only args, keyword-only args, and mixed parameter types.
+- **Command reference doc** (`docs/commands.md`) — full command reference moved from README.
+
+### Fixed
+- **AST parser missing positional-only and keyword-only args** — `_make_function_record` now handles `posonlyargs` (before `/`), `kwonlyargs` (after `*`), and their defaults correctly. Previously caused `IndexError` on functions using these Python 3.8+ features.
+
+### Changed
+- **README restructured** — concise quick-start with `brief setup -d`, performance stats, and call to action. Detailed command reference moved to `docs/commands.md`.
+- **API key messaging** — environment variables presented as primary method, `.env` files as fallback.
+- **Search quality runner simplified** — queries source `.brief/` directly instead of creating temp directories. Descriptions and embeddings generated once, reused across runs.
 
 ---
 

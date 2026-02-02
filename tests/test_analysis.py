@@ -348,6 +348,154 @@ def caller2():
             assert "caller2" in callers
 
 
+class TestParameterTypes:
+    """Tests for positional-only, keyword-only, and mixed parameter parsing."""
+
+    def test_parser_extracts_posonly_args(self) -> None:
+        """Test parser handles positional-only args (before /)."""
+        code = '''
+def func(a, b, /, c):
+    """Function with positional-only args."""
+    pass
+'''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "test.py"
+            file_path.write_text(code)
+
+            parser = PythonFileParser(file_path, Path(tmpdir))
+            assert parser.parse()
+
+            functions = list(parser.get_functions())
+            assert len(functions) == 1
+            func = functions[0]
+            assert len(func.params) == 3
+            assert func.params[0].name == "a"
+            assert func.params[1].name == "b"
+            assert func.params[2].name == "c"
+
+    def test_parser_extracts_kwonly_args(self) -> None:
+        """Test parser handles keyword-only args (after *)."""
+        code = '''
+def func(a, *, b, c=3):
+    """Function with keyword-only args."""
+    pass
+'''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "test.py"
+            file_path.write_text(code)
+
+            parser = PythonFileParser(file_path, Path(tmpdir))
+            assert parser.parse()
+
+            functions = list(parser.get_functions())
+            assert len(functions) == 1
+            func = functions[0]
+            assert len(func.params) == 3
+            assert func.params[0].name == "a"
+            assert func.params[1].name == "b"
+            assert func.params[1].default is None
+            assert func.params[2].name == "c"
+            assert func.params[2].default == "3"
+
+    def test_parser_mixed_param_types(self) -> None:
+        """Test parser with all parameter types combined."""
+        code = '''
+def func(a, b=1, /, c=2, *, d, e=4):
+    """Function with all parameter types."""
+    pass
+'''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "test.py"
+            file_path.write_text(code)
+
+            parser = PythonFileParser(file_path, Path(tmpdir))
+            assert parser.parse()
+
+            functions = list(parser.get_functions())
+            assert len(functions) == 1
+            func = functions[0]
+            assert len(func.params) == 5
+            # Positional-only: a (no default), b (default=1)
+            assert func.params[0].name == "a"
+            assert func.params[0].default is None
+            assert func.params[1].name == "b"
+            assert func.params[1].default == "1"
+            # Regular: c (default=2)
+            assert func.params[2].name == "c"
+            assert func.params[2].default == "2"
+            # Keyword-only: d (no default), e (default=4)
+            assert func.params[3].name == "d"
+            assert func.params[3].default is None
+            assert func.params[4].name == "e"
+            assert func.params[4].default == "4"
+
+    def test_parser_posonly_with_defaults(self) -> None:
+        """Test positional-only args where only some have defaults."""
+        code = '''
+def func(a, b=10, /):
+    pass
+'''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "test.py"
+            file_path.write_text(code)
+
+            parser = PythonFileParser(file_path, Path(tmpdir))
+            assert parser.parse()
+
+            functions = list(parser.get_functions())
+            func = functions[0]
+            assert len(func.params) == 2
+            assert func.params[0].name == "a"
+            assert func.params[0].default is None
+            assert func.params[1].name == "b"
+            assert func.params[1].default == "10"
+
+    def test_parser_kwonly_with_type_hints(self) -> None:
+        """Test keyword-only args with type annotations."""
+        code = '''
+def func(*, name: str, count: int = 0, flag: bool = False):
+    pass
+'''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "test.py"
+            file_path.write_text(code)
+
+            parser = PythonFileParser(file_path, Path(tmpdir))
+            assert parser.parse()
+
+            functions = list(parser.get_functions())
+            func = functions[0]
+            assert len(func.params) == 3
+            assert func.params[0].name == "name"
+            assert func.params[0].type_hint == "str"
+            assert func.params[0].default is None
+            assert func.params[1].name == "count"
+            assert func.params[1].type_hint == "int"
+            assert func.params[1].default == "0"
+            assert func.params[2].name == "flag"
+            assert func.params[2].type_hint == "bool"
+            assert func.params[2].default == "False"
+
+    def test_parser_no_crash_on_empty_args_with_defaults(self) -> None:
+        """Regression test: functions with only posonlyargs shouldn't crash on defaults."""
+        code = '''
+def func(a=1, b=2, /):
+    pass
+'''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "test.py"
+            file_path.write_text(code)
+
+            parser = PythonFileParser(file_path, Path(tmpdir))
+            assert parser.parse()
+
+            functions = list(parser.get_functions())
+            func = functions[0]
+            assert len(func.params) == 2
+            assert func.params[0].default == "1"
+            assert func.params[1].default == "2"
+
+
 class TestFileHash:
     """Tests for file hashing."""
 
