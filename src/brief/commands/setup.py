@@ -1,18 +1,18 @@
 """Setup wizard for Brief."""
+from __future__ import annotations
 
 import os
 import json
 import stat
 import typer
 from pathlib import Path
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
-from rich import box
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.console import Console
 
 from ..config import get_brief_path
 from ..storage import write_json, read_json
-from ..models import BriefConfig
 
 
 def _detect_api_keys() -> dict[str, bool]:
@@ -134,8 +134,10 @@ def _write_claude_md_snippet(base_path: Path, console: Console) -> bool:
 # --- Hook script contents (written to .brief/hooks/) ---
 
 _HOOK_SESSION_START = r'''#!/bin/bash
-# Brief SessionStart hook - prime agent with workflow on session start/resume/compact
+# Brief SessionStart hook - refresh analysis and prime agent with workflow
 cat > /dev/null
+# Refresh analysis to catch any files changed since last session
+brief analyze refresh > /dev/null 2>&1
 cat << 'EOF'
 {"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"[Brief Workflow] This project uses Brief for context management.\n\nWHEN YOU NEED TO UNDERSTAND CODE:\n1. FIRST run: brief context get \"<what you need to understand>\"\n2. Brief returns: file descriptions, signatures, relationships, and related files\n3. THEN use Read only for specific files you need to edit\n\nStart with: brief status"}}
 EOF
@@ -146,7 +148,7 @@ _HOOK_PRE_COMPACT = r'''#!/bin/bash
 # Brief PreCompact hook - ensure compaction summary includes resume instructions
 cat > /dev/null
 cat << 'EOF'
-{"hookSpecificOutput":{"hookEventName":"PreCompact","additionalContext":"[Compaction Note] Include in your summary: After resuming, run `brief resume` first, then use `brief context get` before exploring code with Read/Grep/Glob."}}
+{"systemMessage":"[Compaction Note] Include in your summary: After resuming, run `brief resume` first, then use `brief context get` before exploring code with Read/Grep/Glob."}
 EOF
 exit 0
 '''
@@ -199,7 +201,7 @@ _BRIEF_HOOKS_CONFIG = {
     "SessionStart": [
         {
             "matcher": "startup|resume|compact",
-            "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.brief/hooks/session-start.sh", "timeout": 5}]
+            "hooks": [{"type": "command", "command": "$CLAUDE_PROJECT_DIR/.brief/hooks/session-start.sh", "timeout": 15}]
         }
     ],
     "PreCompact": [
@@ -334,6 +336,12 @@ def setup(
         brief setup              # Interactive setup
         brief setup -d           # Full automated setup
     """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt, Confirm
+    from rich import box
+    from ..models import BriefConfig
+
     console = Console()
     brief_path = get_brief_path(path)
 
@@ -357,6 +365,15 @@ def setup(
                 console.print("Setup cancelled.")
                 raise typer.Exit(0)
         console.print()
+
+    # Load the user's project .env (if present) before detecting keys
+    env_file = path / ".env"
+    if env_file.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_file)
+        except ImportError:
+            pass
 
     # Detect API keys
     api_keys = _detect_api_keys()
@@ -498,6 +515,7 @@ def setup(
     else:
         file_count = 0
 
+    embed_count = 0
     # --- Step 5: Lite Descriptions + Embeddings ---
     if run_analysis and file_count > 0:
         console.print()
@@ -511,6 +529,7 @@ def setup(
         console.print(f"  [green]✓[/green] Generated lite descriptions for {desc_count} files")
 
         # Generate embeddings if OpenAI key available
+        embed_count = 0
         if has_openai:
             try:
                 from ..retrieval.embeddings import embed_all_descriptions, is_embedding_api_available
@@ -518,7 +537,11 @@ def setup(
                 if is_embedding_api_available():
                     console.print("  [dim]Generating embeddings (OpenAI)...[/dim]")
                     embed_count = embed_all_descriptions(brief_path)
-                    console.print(f"  [green]✓[/green] Embedded {embed_count} files — semantic search enabled")
+                    if embed_count > 0:
+                        console.print(f"  [green]✓[/green] Embedded {embed_count} files — semantic search enabled")
+                    else:
+                        console.print("  [yellow]![/yellow] No files were embedded — keyword search only")
+                        console.print("  [dim]Run 'brief context embed' later to retry[/dim]")
                 else:
                     console.print("  [yellow]![/yellow] OpenAI API not available — skipping embeddings")
                     console.print("  [dim]Run 'brief context embed' later to enable semantic search[/dim]")
@@ -555,7 +578,7 @@ def setup(
     # --- Summary ---
     console.print()
 
-    has_embeddings = has_openai and run_analysis and file_count > 0
+    has_embeddings = run_analysis and file_count > 0 and embed_count > 0
     search_mode = "[green]semantic + keyword[/green]" if has_embeddings else "[yellow]keyword only[/yellow]"
 
     console.print(Panel(

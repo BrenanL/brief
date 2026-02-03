@@ -11,7 +11,6 @@ from ..config import (
     CONTEXT_DIR,
 )
 from ..storage import write_json, write_jsonl, read_json
-from ..models import BriefConfig
 
 
 def _ensure_gitignore(base_path: Path) -> bool:
@@ -86,6 +85,7 @@ def init(
     write_jsonl(brief_path / MEMORY_FILE, [])
 
     # Create config
+    from ..models import BriefConfig
     config = BriefConfig()
     write_json(brief_path / "config.json", config.model_dump())
 

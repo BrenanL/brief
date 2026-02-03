@@ -21,8 +21,11 @@ ManifestRecord = ManifestFileRecord | ManifestClassRecord | ManifestFunctionReco
 
 
 def should_exclude(path: Path, patterns: list[str]) -> bool:
-    """Check if path matches any exclude pattern."""
-    path_str = str(path)
+    """Check if path matches any exclude pattern.
+
+    Matches patterns against individual path components to avoid substring
+    false positives (e.g. gitignore 'lib/' should not exclude 'libs/').
+    """
     for pattern in patterns:
         # Special handling for dot-prefixed directory pattern
         if pattern == ".*":
@@ -31,12 +34,16 @@ def should_exclude(path: Path, patterns: list[str]) -> bool:
                     return True
             continue
 
-        # Check full path
-        if fnmatch.fnmatch(path_str, f"*{pattern}*"):
-            return True
-        # Check just filename
-        if fnmatch.fnmatch(path.name, pattern):
-            return True
+        # Check if pattern contains glob characters
+        if any(c in pattern for c in '*?['):
+            # Glob pattern: match against each path component
+            for part in path.parts:
+                if fnmatch.fnmatch(part, pattern):
+                    return True
+        else:
+            # Plain name: exact match against path components
+            if pattern in path.parts:
+                return True
     return False
 
 
@@ -184,6 +191,99 @@ def get_changed_files(
     ]
 
     return new_files, changed_files, deleted_files
+
+
+def ensure_manifest_current(brief_path: Path, base_path: Path) -> dict[str, int]:
+    """Fast manifest sync — add new files, re-parse stale files, remove deleted.
+
+    Lightweight check (~100ms) suitable for running before every context query.
+    Handles new, changed, and deleted Python files. Does NOT rebuild
+    relationships, descriptions, or embeddings — those are handled by
+    'analyze refresh' via the SessionStart hook.
+
+    Returns dict with counts: {"added": N, "updated": N, "removed": N}.
+    """
+    config_file = brief_path / "config.json"
+    if not config_file.exists():
+        return {"added": 0, "updated": 0, "removed": 0}
+
+    from ..storage import read_json
+    from ..config import load_exclude_patterns
+
+    config = read_json(config_file)
+    exclude = load_exclude_patterns(base_path, config)
+
+    # Get Python files on disk
+    disk_files = {str(f.relative_to(base_path)) for f in find_python_files(base_path, exclude)}
+
+    # Load manifest and build lookup
+    manifest_path = brief_path / MANIFEST_FILE
+    manifest_records = list(read_jsonl(manifest_path))
+    manifest_file_hashes: dict[str, str] = {}
+    for r in manifest_records:
+        if r.get('type') == 'file' and r.get('file_hash'):
+            manifest_file_hashes[r['path']] = r['file_hash']
+
+    manifest_paths = set(manifest_file_hashes.keys())
+
+    # Detect changes
+    new_files = disk_files - manifest_paths
+    deleted_files = manifest_paths - disk_files
+    stale_files: set[str] = set()
+    for fpath in disk_files & manifest_paths:
+        full_path = base_path / fpath
+        if full_path.exists():
+            current_hash = compute_file_hash(full_path)
+            if current_hash != manifest_file_hashes.get(fpath):
+                stale_files.add(fpath)
+
+    if not new_files and not stale_files and not deleted_files:
+        return {"added": 0, "updated": 0, "removed": 0}
+
+    changed = False
+    builder = ManifestBuilder(base_path, exclude)
+
+    # Remove records for deleted and stale files (stale will be re-added)
+    paths_to_remove = deleted_files | stale_files
+    if paths_to_remove:
+        manifest_records = [
+            r for r in manifest_records
+            if r.get('path') not in paths_to_remove  # file/doc records
+            and r.get('file') not in paths_to_remove  # class/function records
+        ]
+        changed = True
+
+    # Parse new and stale files
+    files_to_parse = new_files | stale_files
+    for fpath in sorted(files_to_parse):
+        full_path = base_path / fpath
+        if full_path.exists():
+            try:
+                records = builder.analyze_python_file(full_path)
+                for record in records:
+                    manifest_records.append(
+                        record.model_dump() if hasattr(record, 'model_dump') else record
+                    )
+                changed = True
+            except Exception:
+                continue
+
+    if changed:
+        write_jsonl(manifest_path, manifest_records)
+
+        # Regenerate lite descriptions for new/stale files
+        from ..generation.lite import generate_and_save_lite_description
+        for fpath in sorted(files_to_parse):
+            try:
+                generate_and_save_lite_description(brief_path, fpath)
+            except Exception:
+                continue
+
+    return {
+        "added": len(new_files),
+        "updated": len(stale_files),
+        "removed": len(deleted_files),
+    }
 
 
 class ManifestBuilder:

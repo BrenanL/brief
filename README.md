@@ -55,7 +55,7 @@ The agent gets this context package as the most recent entry in its context wind
 - **Python 3.10+**
 - **No API keys required** for core functionality (analysis, keyword search, task management)
 - **OPENAI_API_KEY** enables semantic search via embeddings (~$0.02 per codebase)
-- **GEMINI_API_KEY** or **OPENAI_API_KEY** or **ANTHROPIC_API_KEY** enables richer LLM-generated descriptions (optional — lite descriptions work well for search)
+- **GOOGLE_API_KEY** or **OPENAI_API_KEY** or **ANTHROPIC_API_KEY** enables richer LLM-generated descriptions (optional — lite descriptions work well for search)
 
 Brief checks your environment variables automatically. Alternatively, set keys in a`.env` file at project root.
 
@@ -63,7 +63,7 @@ Brief checks your environment variables automatically. Alternatively, set keys i
 
 ```bash
 brief setup -d                    # Full automated setup (do this first)
-brief context get "your query>"         # Get context package for a topic
+brief context get "your query"          # Get context package for a topic
 brief ctx "your query"                 # Shortcut for above
 brief status                      # Project dashboard
 brief task list                   # See tasks

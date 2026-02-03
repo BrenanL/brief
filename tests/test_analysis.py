@@ -144,6 +144,36 @@ class TestManifestBuilder:
             stats = builder.get_stats()
             assert stats["files"] == 1  # Only good.py
 
+    def test_exclude_no_substring_match(self) -> None:
+        """Test that exclude patterns match exact components, not substrings.
+
+        Regression test: gitignore 'lib/' should exclude 'lib/' but not 'libs/'.
+        """
+        from brief.analysis.manifest import should_exclude
+
+        # Plain name patterns should match exact path components only
+        assert should_exclude(Path("lib/module.py"), ["lib"]) is True
+        assert should_exclude(Path("src/lib/module.py"), ["lib"]) is True
+        assert should_exclude(Path("libs/module.py"), ["lib"]) is False
+        assert should_exclude(Path("src/libs/module.py"), ["lib"]) is False
+        assert should_exclude(Path("mylib/module.py"), ["lib"]) is False
+
+        # Same for other common gitignore entries
+        assert should_exclude(Path("dist/bundle.js"), ["dist"]) is True
+        assert should_exclude(Path("distributed/module.py"), ["dist"]) is False
+        assert should_exclude(Path("build/out.js"), ["build"]) is True
+        assert should_exclude(Path("buildtools/lint.py"), ["build"]) is False
+
+        # Glob patterns should still work against components
+        assert should_exclude(Path("src/foo.egg-info/PKG-INFO"), ["*.egg-info"]) is True
+        assert should_exclude(Path("foo.pyc"), ["*.pyc"]) is True
+        assert should_exclude(Path("src/foo.pyc"), ["*.pyc"]) is True
+
+        # Dot-prefixed dirs still work
+        assert should_exclude(Path(".git/config"), [".*"]) is True
+        assert should_exclude(Path("src/.hidden/file.py"), [".*"]) is True
+        assert should_exclude(Path("src/visible/file.py"), [".*"]) is False
+
     def test_manifest_builder_saves_manifest(self) -> None:
         """Test manifest builder saves to JSONL."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -494,6 +524,171 @@ def func(a=1, b=2, /):
             assert len(func.params) == 2
             assert func.params[0].default == "1"
             assert func.params[1].default == "2"
+
+
+class TestEnsureManifestCurrent:
+    """Tests for ensure_manifest_current — fast manifest sync."""
+
+    def _setup_project(self, base_path: Path) -> Path:
+        """Create a minimal Brief project with one Python file. Returns brief_path."""
+        from brief.storage import write_jsonl, write_json
+        from brief.analysis.manifest import ManifestBuilder
+        from brief.config import MANIFEST_FILE, CONTEXT_DIR
+
+        brief_path = base_path / ".brief"
+        brief_path.mkdir()
+        (brief_path / CONTEXT_DIR).mkdir()
+        (brief_path / CONTEXT_DIR / "files").mkdir(parents=True)
+
+        # Write config
+        write_json(brief_path / "config.json", {
+            "exclude_patterns": [".*", "__pycache__", "*.pyc"],
+            "use_gitignore": False,
+        })
+
+        # Write initial file and build manifest
+        (base_path / "app.py").write_text("def hello(): pass\n")
+        builder = ManifestBuilder(base_path, [".*", "__pycache__", "*.pyc"])
+        builder.analyze_directory()
+        builder.save_manifest(brief_path)
+
+        # Generate lite description for initial file
+        from brief.generation.lite import generate_and_save_lite_description
+        generate_and_save_lite_description(brief_path, "app.py")
+
+        return brief_path
+
+    def test_detects_new_file(self) -> None:
+        """New Python files are added to manifest and get lite descriptions."""
+        from brief.analysis.manifest import ensure_manifest_current
+        from brief.storage import read_jsonl
+        from brief.config import MANIFEST_FILE, CONTEXT_DIR
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_path = Path(tmpdir)
+            brief_path = self._setup_project(base_path)
+
+            # Add a new file
+            (base_path / "auth.py").write_text("class AuthService:\n    def verify(self): return True\n")
+
+            result = ensure_manifest_current(brief_path, base_path)
+
+            assert result["added"] == 1
+            assert result["updated"] == 0
+            assert result["removed"] == 0
+
+            # Verify manifest has both files
+            records = list(read_jsonl(brief_path / MANIFEST_FILE))
+            file_paths = {r["path"] for r in records if r.get("type") == "file"}
+            assert "app.py" in file_paths
+            assert "auth.py" in file_paths
+
+            # Verify class record exists
+            class_records = [r for r in records if r.get("type") == "class"]
+            assert any(r["name"] == "AuthService" for r in class_records)
+
+            # Verify lite description was generated
+            desc_file = brief_path / CONTEXT_DIR / "files" / "auth.py.md"
+            assert desc_file.exists()
+            assert "AuthService" in desc_file.read_text()
+
+    def test_detects_stale_file(self) -> None:
+        """Modified Python files are re-parsed and descriptions regenerated."""
+        from brief.analysis.manifest import ensure_manifest_current
+        from brief.storage import read_jsonl
+        from brief.config import MANIFEST_FILE, CONTEXT_DIR
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_path = Path(tmpdir)
+            brief_path = self._setup_project(base_path)
+
+            # Verify initial state
+            desc_file = brief_path / CONTEXT_DIR / "files" / "app.py.md"
+            assert desc_file.exists()
+            initial_desc = desc_file.read_text()
+            assert "hello" in initial_desc
+
+            # Modify the file
+            (base_path / "app.py").write_text("def hello(): pass\ndef goodbye(): pass\n")
+
+            result = ensure_manifest_current(brief_path, base_path)
+
+            assert result["added"] == 0
+            assert result["updated"] == 1
+            assert result["removed"] == 0
+
+            # Verify manifest has new function
+            records = list(read_jsonl(brief_path / MANIFEST_FILE))
+            func_names = {r["name"] for r in records if r.get("type") == "function"}
+            assert "hello" in func_names
+            assert "goodbye" in func_names
+
+            # Verify description was regenerated
+            updated_desc = desc_file.read_text()
+            assert "goodbye" in updated_desc
+
+    def test_detects_deleted_file(self) -> None:
+        """Deleted Python files are removed from manifest."""
+        from brief.analysis.manifest import ensure_manifest_current
+        from brief.storage import read_jsonl
+        from brief.config import MANIFEST_FILE
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_path = Path(tmpdir)
+            brief_path = self._setup_project(base_path)
+
+            # Add a second file first
+            (base_path / "extra.py").write_text("def extra(): pass\n")
+            ensure_manifest_current(brief_path, base_path)
+
+            # Now delete it
+            (base_path / "extra.py").unlink()
+
+            result = ensure_manifest_current(brief_path, base_path)
+
+            assert result["removed"] == 1
+
+            # Verify manifest no longer has the deleted file
+            records = list(read_jsonl(brief_path / MANIFEST_FILE))
+            file_paths = {r["path"] for r in records if r.get("type") == "file"}
+            assert "extra.py" not in file_paths
+            assert "app.py" in file_paths
+
+    def test_noop_when_nothing_changed(self) -> None:
+        """Returns zeros and doesn't rewrite manifest when nothing changed."""
+        from brief.analysis.manifest import ensure_manifest_current
+        from brief.config import MANIFEST_FILE
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_path = Path(tmpdir)
+            brief_path = self._setup_project(base_path)
+
+            manifest_path = brief_path / MANIFEST_FILE
+            mtime_before = manifest_path.stat().st_mtime
+
+            result = ensure_manifest_current(brief_path, base_path)
+
+            assert result == {"added": 0, "updated": 0, "removed": 0}
+
+            # Manifest file should not have been rewritten
+            mtime_after = manifest_path.stat().st_mtime
+            assert mtime_before == mtime_after
+
+    def test_unparseable_file_does_not_crash(self) -> None:
+        """Files with syntax errors don't crash ensure_manifest_current."""
+        from brief.analysis.manifest import ensure_manifest_current
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_path = Path(tmpdir)
+            brief_path = self._setup_project(base_path)
+
+            # Add a file with invalid Python
+            (base_path / "broken.py").write_text("class Foo(\n")
+
+            result = ensure_manifest_current(brief_path, base_path)
+
+            # Should still report it as added (detected on disk)
+            assert result["added"] == 1
 
 
 class TestFileHash:

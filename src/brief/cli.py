@@ -10,7 +10,7 @@ app = typer.Typer(
     help="Context infrastructure for AI coding agents - deterministic context packages for convergent code generation",
     no_args_is_help=True,
     rich_markup_mode="rich",
-    epilog="[dim]Quick start: brief setup -d  |  Try: brief ctx \"your query\"  |  Docs: brief --help[/dim]",
+    epilog="[dim]Quick start: brief setup -d  |  Try: brief ctx \"your query\"  |  Typer tab completions: brief --install-completion[/dim]",
 )
 
 
@@ -65,11 +65,15 @@ def _run_quick_query(query: str, base: Path) -> None:
     from .retrieval.context import build_context_for_query
     from .retrieval.search import hybrid_search
     from .commands.context import _get_auto_generate_default, _check_manifest_has_files
+    from .analysis.manifest import ensure_manifest_current
 
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
+
+    # Auto-sync manifest with disk (new, changed, deleted files)
+    ensure_manifest_current(brief_path, base)
 
     if not _check_manifest_has_files(brief_path):
         typer.echo("Error: No files in manifest. Run 'brief analyze all' first.", err=True)
@@ -213,13 +217,14 @@ def resume(
         typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
 
-    # Check if tasks are enabled
+    # Check if tasks are enabled — fall back to status if not
     config = read_json(brief_path / "config.json")
     if not config.get("enable_tasks", False):
-        typer.echo("Task system is not enabled.", err=True)
-        typer.echo("To enable: brief config set enable_tasks true", err=True)
-        typer.echo("Or re-run setup with: brief setup --tasks", err=True)
-        raise typer.Exit(1)
+        from .commands.report import status as status_cmd
+        typer.echo("Task system is not enabled — showing project status instead.")
+        typer.echo("")
+        status_cmd(base=base)
+        return
 
     manager = TaskManager(brief_path)
     task = manager.get_active_task()

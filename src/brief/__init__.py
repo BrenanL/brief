@@ -7,6 +7,4 @@ they call brief to get exactly the context needed for their task.
 
 __version__ = "0.1.0"
 
-from .cli import app
-
-__all__ = ["app", "__version__"]
+__all__ = ["__version__"]
