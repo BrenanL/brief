@@ -8,7 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-None — release 0.1.0
+### Fixed
+- Lite descriptions now include `<!-- lite -->` marker so they can be distinguished from LLM descriptions
+- `brief describe batch` no longer says "No files to describe" on fresh install — lite descriptions are treated as candidates for LLM upgrade
+- Lazy-load in `get_file_description` now upgrades lite descriptions to LLM descriptions when BAML is available
 
 ---
 

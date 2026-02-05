@@ -516,7 +516,23 @@ def get_file_description(
 
     context_file = brief_path / CONTEXT_DIR / "files" / (file_path.replace("/", "__").replace("\\", "__") + ".md")
     if context_file.exists():
-        return context_file.read_text()
+        content = context_file.read_text()
+        is_lite = "<!-- lite -->" in content
+
+        # If it's a lite description and BAML is available, upgrade to LLM
+        if is_lite and auto_generate and base_path:
+            try:
+                from ..generation.generator import generate_and_save_file_description, is_baml_available
+                if is_baml_available():
+                    if show_progress:
+                        print(f"  Upgrading description for {file_path}...", file=sys.stderr)
+                    upgraded = generate_and_save_file_description(brief_path, base_path, file_path)
+                    if upgraded:
+                        return upgraded
+            except Exception:
+                pass
+
+        return content
 
     # Lazy generation if requested
     if auto_generate and base_path:
