@@ -4,25 +4,23 @@ This module provides functions to generate descriptions for code elements
 using an LLM (via BAML). If BAML is not configured, it provides placeholder
 descriptions for testing.
 """
+import os
 from pathlib import Path
 from typing import Optional
 from ..config import load_env
 from ..models import ManifestFunctionRecord, ManifestClassRecord, ManifestFileRecord
 from .types import FunctionDescription, ClassDescription, FileDescription, ModuleDescription
 
+# Suppress BAML logging by default (must be set before import)
+if "BAML_LOG" not in os.environ:
+    os.environ["BAML_LOG"] = "error"
+
 # Try to load BAML client
 _baml_available = False
 _baml_client = None
 
 try:
-    # Load env before BAML import
     load_env()
-    # Try repo-root baml_client first (where baml-cli generate puts it)
-    import sys
-    from pathlib import Path
-    repo_root = Path(__file__).parent.parent.parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
     from baml_client.sync_client import b as _baml_client
     _baml_available = True
 except ImportError:

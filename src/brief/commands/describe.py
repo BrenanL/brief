@@ -310,11 +310,19 @@ def describe_batch(
         # Check if description already exists (either in manifest or as actual file)
         if skip_existing:
             if record.get("context_ref"):
-                continue
-            # Also check if description file exists on disk
-            desc_filename = record["path"].replace("/", "__").replace("\\", "__") + ".md"
-            if (context_files_dir / desc_filename).exists():
-                continue
+                # Check if the actual file is a lite description (should be upgraded)
+                desc_filename = record["path"].replace("/", "__").replace("\\", "__") + ".md"
+                desc_file = context_files_dir / desc_filename
+                if desc_file.exists() and "<!-- lite -->" in desc_file.read_text():
+                    pass  # Lite description — treat as candidate for LLM upgrade
+                else:
+                    continue
+            else:
+                # Also check if description file exists on disk
+                desc_filename = record["path"].replace("/", "__").replace("\\", "__") + ".md"
+                desc_file = context_files_dir / desc_filename
+                if desc_file.exists() and "<!-- lite -->" not in desc_file.read_text():
+                    continue
 
         candidate_files.append(record["path"])
 

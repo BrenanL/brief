@@ -33,10 +33,15 @@
 ---
 
 ## Current Issues
+- for now, put a quick list of the "main" files pulled by context get at the top. That way, I can see at a glance which files got pulled. 
+- `[DONE 2026-02-05]` Lazy load of llm descriptions doesnt seem to work?
+- claude code auto using explore agents may prevent brief from being used (and plan mode)
 
 ### Bugs
 
-- `[DEFERRED post-release]` **LLM description lazy-load doesn't upgrade or refresh** — `get_file_description` returns early if any description file exists, so lite descriptions are never upgraded to LLM descriptions even when an LLM key is available. **Workaround**: users run `brief describe batch` (documented in README). **Future fix**: write a `<!-- lite -->` marker into lite-generated description files, check for it during retrieval, and upgrade when BAML is available.
+- `[DONE 2026-02-05]` On fresh install, running `brief describe batch` after setup says "No files to describe." — Fixed: lite descriptions now carry a `<!-- lite -->` marker, and both `describe batch` and lazy-load check for it.
+
+- `[DONE 2026-02-05]` **LLM description lazy-load doesn't upgrade or refresh** — Fixed: `get_file_description` now checks for `<!-- lite -->` marker and upgrades to LLM description when BAML is available. `describe batch` also treats lite descriptions as candidates for LLM upgrade. Note: existing installs need `brief setup -d` to regenerate lite descriptions with the marker.
 - **README typo** line 60: missing space before backtick in `in a\`.env\``.
 
 ### UX / Polish

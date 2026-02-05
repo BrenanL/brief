@@ -8,7 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-None — release 0.1.0
+### Fixed
+- Lite descriptions now include `<!-- lite -->` marker so they can be distinguished from LLM descriptions
+- `brief describe batch` no longer says "No files to describe" on fresh install — lite descriptions are treated as candidates for LLM upgrade
+- Lazy-load in `get_file_description` now upgrades lite descriptions to LLM descriptions when BAML is available
+- BAML logging now suppressed by default (`BAML_LOG=error`) — set `BAML_LOG` env var to override
+- LLM descriptions now work on fresh install — `baml_client` shipped in package, `baml-py` is a required dependency
+
+### Added
+- `lazy_upgrade_limit` config parameter (default 3) — caps lite→LLM upgrades per `context get` call. Set to 0 to disable, -1 for unlimited.
+
+### Changed
+- `baml-py` moved from optional `[llm]` to required dependency
+- `baml_src/` and `baml_client/` moved into `src/` for proper packaging
 
 ---
 
