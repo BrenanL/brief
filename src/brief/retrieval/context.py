@@ -539,8 +539,10 @@ def get_file_description(
                         if upgrade_budget is not None and upgrade_budget[0] > 0:
                             upgrade_budget[0] -= 1
                         return upgraded
-            except Exception:
-                pass
+                    else:
+                        print(f"  Warning: upgrade returned empty for {file_path}", file=sys.stderr)
+            except Exception as e:
+                print(f"  Warning: failed to upgrade {file_path}: {e}", file=sys.stderr)
 
         return content
 

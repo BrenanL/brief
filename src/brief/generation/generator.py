@@ -369,8 +369,8 @@ def generate_and_save_file_description(
         write_jsonl(brief_path / MANIFEST_FILE, records)
 
         return full_content
-    except Exception:
-        return None
+    except Exception as e:
+        raise RuntimeError(f"Description generation failed for {file_path}: {e}") from e
 
 
 def format_function_description(desc: FunctionDescription) -> str:
