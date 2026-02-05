@@ -162,3 +162,31 @@ def refresh(
     # For now, do a full re-analyze
     typer.echo("\nRe-analyzing...")
     analyze_directory(directory=base, all_files=True, base=base)
+
+    # Generate lite descriptions for files that don't have one yet
+    from ..generation.lite import generate_and_save_lite_description
+    from ..config import CONTEXT_DIR
+    from ..storage import read_jsonl as _read_jsonl
+    from ..config import MANIFEST_FILE as _MF
+
+    new_descs = 0
+    for record in _read_jsonl(brief_path / _MF):
+        if record["type"] == "file" and record.get("path", "").endswith(".py"):
+            ctx_file = brief_path / CONTEXT_DIR / "files" / (
+                record["path"].replace("/", "__").replace("\\", "__") + ".md"
+            )
+            if not ctx_file.exists():
+                if generate_and_save_lite_description(brief_path, record["path"]):
+                    new_descs += 1
+    if new_descs:
+        typer.echo(f"  Generated {new_descs} new lite descriptions")
+
+    # Re-embed if OpenAI is available and new descriptions were generated
+    if new_descs:
+        try:
+            from ..retrieval.embeddings import embed_all_descriptions, is_embedding_api_available
+            if is_embedding_api_available():
+                count = embed_all_descriptions(brief_path)
+                typer.echo(f"  Re-embedded {count} files")
+        except Exception:
+            pass  # Embeddings are optional — don't fail refresh

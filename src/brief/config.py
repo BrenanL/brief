@@ -21,14 +21,9 @@ def load_env() -> bool:
     if not HAS_DOTENV:
         return False
 
-    # Try repo root first (relative to this file)
-    repo_root = Path(__file__).parent.parent.parent
-    env_file = repo_root / ".env"
-    if env_file.exists():
-        load_dotenv(env_file)
-        return True
-
-    # Try current directory
+    # Load from current working directory (user's project root).
+    # CWD is where the user invokes `brief` from — the correct location
+    # for their .env file, not Brief's install directory.
     if Path(".env").exists():
         load_dotenv()
         return True

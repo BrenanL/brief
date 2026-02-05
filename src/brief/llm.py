@@ -27,7 +27,7 @@ MODELS = {
     "default": "Default",
 }
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gpt-5-mini"
 
 # File to store active model (session override)
 ACTIVE_MODEL_FILE = "active_model"

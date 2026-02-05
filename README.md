@@ -57,7 +57,7 @@ The agent gets this context package as the most recent entry in its context wind
 - **OPENAI_API_KEY** enables semantic search via embeddings (~$0.02 per codebase)
 - **GOOGLE_API_KEY** or **OPENAI_API_KEY** or **ANTHROPIC_API_KEY** enables richer LLM-generated descriptions (optional — lite descriptions work well for search)
 
-Brief checks your environment variables automatically. Alternatively, set keys in a`.env` file at project root.
+Brief checks your environment variables automatically. Alternatively, set keys in a `.env` file at project root.
 
 ## Key Commands
 
@@ -69,6 +69,7 @@ brief status                      # Project dashboard
 brief task list                   # See tasks
 brief resume                      # Resume after context compaction
 brief analyze refresh             # Re-analyze changed files
+brief describe batch              # Generate LLM descriptions (requires API key)
 brief context embed               # Regenerate embeddings
 ```
 

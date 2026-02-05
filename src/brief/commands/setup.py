@@ -586,7 +586,8 @@ def setup(
         f"Files analyzed: {file_count}\n"
         f"Search mode: {search_mode}\n"
         f"Auto-generate descriptions: {'[green]enabled[/green]' if auto_generate else '[yellow]disabled[/yellow]'}\n"
-        f"Command logging: {'[green]enabled[/green]' if command_logging else '[yellow]disabled[/yellow]'}",
+        f"Command logging: {'[green]enabled[/green]' if command_logging else '[yellow]disabled[/yellow]'}\n"
+        f"Task management: {'[green]enabled[/green]' if enable_tasks else '[dim]disabled[/dim] (enable with brief setup --tasks)'}",
         box=box.ROUNDED,
         title="Brief"
     ))
