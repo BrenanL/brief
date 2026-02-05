@@ -207,6 +207,7 @@ class BriefConfig(BaseModel):
     auto_generate_descriptions: bool = True  # Auto-generate descriptions when missing
     enable_tasks: bool = False  # Enable built-in task management (disable to use external tools like Beads)
     llm_provider: str = "openai"  # LLM provider: openai, anthropic, or google (edit baml_src/clients.baml to change)
+    lazy_upgrade_limit: int = 3  # Max lite→LLM upgrades per context get call (0=disabled, -1=unlimited)
     exclude_patterns: list[str] = Field(default_factory=lambda: [
         ".*",              # All dot-prefixed folders (.git, .venv, .claude, etc.)
         "__pycache__",

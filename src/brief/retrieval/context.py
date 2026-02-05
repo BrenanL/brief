@@ -497,7 +497,8 @@ def get_file_description(
     file_path: str,
     auto_generate: bool = False,
     base_path: Optional[Path] = None,
-    show_progress: bool = True
+    show_progress: bool = True,
+    upgrade_budget: Optional[list[int]] = None
 ) -> str | None:
     """Get the description for a file.
 
@@ -507,6 +508,9 @@ def get_file_description(
         auto_generate: If True, generate description on-demand if missing
         base_path: Base path for the project (required if auto_generate is True)
         show_progress: If True, print progress message when generating (default True)
+        upgrade_budget: Mutable [remaining] counter for lite→LLM upgrades.
+            None = no limit, [0] = no more upgrades, [n] = n upgrades left.
+            Decremented on each successful upgrade.
 
     Returns:
         The description content, or None if not found and auto_generate is False.
@@ -516,7 +520,31 @@ def get_file_description(
 
     context_file = brief_path / CONTEXT_DIR / "files" / (file_path.replace("/", "__").replace("\\", "__") + ".md")
     if context_file.exists():
-        return context_file.read_text()
+        content = context_file.read_text()
+        is_lite = "<!-- lite -->" in content
+
+        # If it's a lite description and BAML is available, upgrade to LLM
+        if is_lite and auto_generate and base_path:
+            # Check upgrade budget (None = no limit, [0] = exhausted, [-1] = unlimited)
+            if upgrade_budget is not None and upgrade_budget[0] == 0:
+                return content  # Budget exhausted, return lite as-is
+            try:
+                from ..generation.generator import generate_and_save_file_description, is_baml_available
+                if is_baml_available():
+                    if show_progress:
+                        print(f"  Upgrading description for {file_path}...", file=sys.stderr)
+                    upgraded = generate_and_save_file_description(brief_path, base_path, file_path)
+                    if upgraded:
+                        # Decrement budget (skip if unlimited [-1])
+                        if upgrade_budget is not None and upgrade_budget[0] > 0:
+                            upgrade_budget[0] -= 1
+                        return upgraded
+                    else:
+                        print(f"  Warning: upgrade returned empty for {file_path}", file=sys.stderr)
+            except Exception as e:
+                print(f"  Warning: failed to upgrade {file_path}: {e}", file=sys.stderr)
+
+        return content
 
     # Lazy generation if requested
     if auto_generate and base_path:
@@ -550,7 +578,8 @@ def get_file_context(
     brief_path: Path,
     file_path: str,
     auto_generate_descriptions: bool = False,
-    base_path: Optional[Path] = None
+    base_path: Optional[Path] = None,
+    upgrade_budget: Optional[list[int]] = None
 ) -> dict[str, Any]:
     """Get full context for a specific file.
 
@@ -559,6 +588,7 @@ def get_file_context(
         file_path: Relative path to the file
         auto_generate_descriptions: If True, generate descriptions on-demand if missing
         base_path: Base path for the project (required if auto_generate_descriptions is True)
+        upgrade_budget: Mutable [remaining] counter for lite→LLM upgrades (passed through)
 
     Returns:
         Dict containing file context (record, classes, functions, imports, description, etc.)
@@ -591,7 +621,8 @@ def get_file_context(
     description = get_file_description(
         brief_path, file_path,
         auto_generate=auto_generate_descriptions,
-        base_path=base_path
+        base_path=base_path,
+        upgrade_budget=upgrade_budget
     )
 
     return {
@@ -778,6 +809,18 @@ def get_relevant_paths(
         return []
 
 
+def _make_upgrade_budget(brief_path: Path) -> Optional[list[int]]:
+    """Create an upgrade budget from config. Returns None if upgrades disabled."""
+    from ..storage import read_json
+    config = read_json(brief_path / "config.json")
+    limit = config.get("lazy_upgrade_limit", 3)
+    if limit == 0:
+        return [0]  # Disabled
+    if limit < 0:
+        return [-1]  # Unlimited (never decremented)
+    return [limit]
+
+
 def build_context_for_file(
     brief_path: Path,
     file_path: str,
@@ -797,20 +840,25 @@ def build_context_for_file(
     if base_path is None:
         base_path = brief_path.parent
 
+    # Create upgrade budget from config
+    upgrade_budget = _make_upgrade_budget(brief_path) if auto_generate_descriptions else None
+
     # Get primary file context
     primary = get_file_context(
         brief_path, file_path,
         auto_generate_descriptions=auto_generate_descriptions,
-        base_path=base_path
+        base_path=base_path,
+        upgrade_budget=upgrade_budget
     )
     package.primary_files.append(primary)
 
-    # Add imported files as related
+    # Add imported files as related (no upgrades for related files)
     for imp_path in primary["imports"]:
         imp_context = get_file_context(
             brief_path, imp_path,
             auto_generate_descriptions=auto_generate_descriptions,
-            base_path=base_path
+            base_path=base_path,
+            upgrade_budget=upgrade_budget
         )
         imp_context["reason"] = "imported by primary file"
         package.related_files.append(imp_context)
@@ -820,7 +868,8 @@ def build_context_for_file(
         imp_context = get_file_context(
             brief_path, imp_path,
             auto_generate_descriptions=auto_generate_descriptions,
-            base_path=base_path
+            base_path=base_path,
+            upgrade_budget=upgrade_budget
         )
         imp_context["reason"] = "imports primary file"
         package.related_files.append(imp_context)
@@ -889,6 +938,9 @@ def build_context_for_query(
     if base_path is None:
         base_path = brief_path.parent
 
+    # Create upgrade budget from config
+    upgrade_budget = _make_upgrade_budget(brief_path) if auto_generate_descriptions else None
+
     # Collect all file paths for matching
     all_file_paths: list[str] = []
 
@@ -904,7 +956,8 @@ def build_context_for_query(
                 context = get_file_context(
                     brief_path, result_path,
                     auto_generate_descriptions=auto_generate_descriptions,
-                    base_path=base_path
+                    base_path=base_path,
+                    upgrade_budget=upgrade_budget
                 )
             context["relevance"] = result.get("score", 0)
             package.primary_files.append(context)
@@ -918,7 +971,8 @@ def build_context_for_query(
                 imp_context = get_file_context(
                     brief_path, imp_path,
                     auto_generate_descriptions=auto_generate_descriptions,
-                    base_path=base_path
+                    base_path=base_path,
+                    upgrade_budget=upgrade_budget
                 )
                 imp_context["reason"] = f"imported by {primary['path']}"
                 if imp_context not in package.related_files:
@@ -961,7 +1015,8 @@ def build_context_for_query(
             context = get_file_context(
                 brief_path, file_path,
                 auto_generate_descriptions=auto_generate_descriptions,
-                base_path=base_path
+                base_path=base_path,
+                upgrade_budget=upgrade_budget
             )
             context["relevance"] = score
             package.primary_files.append(context)
@@ -987,7 +1042,8 @@ def build_context_for_query(
                     context = get_file_context(
                         brief_path, rel["path"],
                         auto_generate_descriptions=auto_generate_descriptions,
-                        base_path=base_path
+                        base_path=base_path,
+                        upgrade_budget=upgrade_budget
                     )
                     context["reason"] = rel["reason"]
                     package.related_files.append(context)

@@ -19,11 +19,11 @@
 //     }
 //   }
 
-// Generator config - outputs to brief/baml_client/
+// Generator config - outputs to src/baml_client/ (sibling directory)
 generator target {
   output_type "python/pydantic"
   output_dir ".."
-  version "0.217.0"
+  version "0.218.1"
 }
 
 // =============================================================================

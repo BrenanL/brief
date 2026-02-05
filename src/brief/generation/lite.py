@@ -299,7 +299,7 @@ def generate_and_save_lite_description(brief_path: Path, file_path: str) -> str 
     context_file.parent.mkdir(parents=True, exist_ok=True)
 
     header = f"# {file_path}\n\n"
-    full_content = header + description
+    full_content = header + description + "\n<!-- lite -->\n"
     context_file.write_text(full_content)
 
     return full_content
