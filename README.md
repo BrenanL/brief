@@ -10,29 +10,40 @@ Preliminary testing shows brief-guided agents complete coding tasks **30% faster
 
 ### Option A: Let Claude Code install it
 
-Paste this into Claude Code (replace the path with where you want Brief installed):
+Paste this into Claude Code:
 
 ```
-Clone brief from https://github.com/BrenanL/brief into /home/user/brief/ and install it in this project. Then run `brief setup -d` to configure.
+Install brief with: uv tool install git+https://github.com/BrenanL/brief.git
+Then run `brief setup -d` in this project to configure. Restart Claude Code after setup completes.
 ```
 
-Restart Claude Code after setup completes.
-
-### Option B: Manual install
+### Option B: Install it yourself
 
 ```bash
-# Install Brief
-git clone https://github.com/BrenanL/brief.git
-cd brief && python -m venv .venv && source .venv/bin/activate
-pip install -e .
+# With uv (recommended)
+uv tool install git+https://github.com/BrenanL/brief.git
 
-# Go to your project and set up
+# Or with pipx
+pipx install git+https://github.com/BrenanL/brief.git
+```
+
+Then set up Brief in your project:
+
+```bash
 cd /path/to/your/project
-brief setup -d  # use defaults
-brief setup     # interactive setup wizard
+brief setup -d
 ```
 
 That's it. `brief setup -d` initializes Brief, analyzes your codebase, generates search descriptions, creates embeddings (if `OPENAI_API_KEY` is set), and configures your CLAUDE.md.
+
+### For developers
+
+If you want to modify Brief itself:
+
+```bash
+git clone https://github.com/BrenanL/brief.git
+cd brief && uv pip install -e .
+```
 
 ### Try it
 
