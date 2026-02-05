@@ -71,8 +71,7 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
-# BAML
-baml_client/
+# BAML (generated client is committed in src/baml_client/ for packaging)
 
 # Project specific
 .brief/
