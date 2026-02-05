@@ -90,6 +90,18 @@
 
 ---
 
+## Next Version(s) Plans
+
+### v0.2 - Context Quality (COMPLETED 2026-01-23)
+See CHANGELOG.md for details. Task archive: `.brief/archives/tasks/2026-01-27_*_sprint-01-task-plan.*`
+
+### v0.3 - Better Search `[DEFERRED]`
+- Improved semantic search ranking
+- Search result explanations (why this file matched)
+- Filter by file type/directory
+
+---
+
 ## Technical Notes
 
 **Performance Testing Findings (2026-01-30)**
