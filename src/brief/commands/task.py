@@ -25,7 +25,7 @@ def _check_tasks_enabled(brief_path: Path) -> bool:
         return True  # Let individual commands handle "not initialized" error
 
     config = read_json(brief_path / "config.json")
-    if not config.get("enable_tasks", True):
+    if not config.get("enable_tasks", False):
         typer.echo("Task system is disabled in config.", err=True)
         typer.echo("To enable: brief config set enable_tasks true", err=True)
         typer.echo("", err=True)

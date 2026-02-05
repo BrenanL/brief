@@ -2,6 +2,8 @@
 
 This is the **Brief** codebase - a context infrastructure tool for AI coding agents.
 
+**Read [`docs/AGENT_INSTRUCTIONS.md`](docs/AGENT_INSTRUCTIONS.md) for architecture, design principles, data structures, and how the components fit together.**
+
 ---
 
 ## HOW TO WORK IN THIS CODEBASE

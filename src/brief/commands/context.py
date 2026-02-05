@@ -4,14 +4,6 @@ from pathlib import Path
 from typing import Optional
 from ..config import get_brief_path, MANIFEST_FILE
 from ..storage import read_json, read_jsonl
-from ..retrieval.context import (
-    build_context_for_file,
-    build_context_for_query,
-    get_file_context,
-)
-from ..retrieval.search import hybrid_search, keyword_search, semantic_search
-from ..retrieval.embeddings import is_embedding_api_available
-from ..tasks.manager import TaskManager
 
 app = typer.Typer()
 
@@ -92,11 +84,18 @@ def context_get(
     Use -G/--no-auto-generate to disable:
         brief context get "task management" -G
     """
+    from ..retrieval.context import build_context_for_file, build_context_for_query
+    from ..retrieval.search import hybrid_search
+    from ..analysis.manifest import ensure_manifest_current
+
     brief_path = get_brief_path(base)
 
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
+
+    # Auto-sync manifest with disk (new, changed, deleted files)
+    ensure_manifest_current(brief_path, base)
 
     # Check if manifest has any files
     if not _check_manifest_has_files(brief_path):
@@ -119,6 +118,7 @@ def context_get(
 
     # Handle task-based context
     if task:
+        from ..tasks.manager import TaskManager
         task_manager = TaskManager(brief_path)
         task_record = task_manager.get_task(task)
         if not task_record:
@@ -192,6 +192,8 @@ def context_related(
     depth: int = typer.Option(1, "--depth", "-d", help="Relationship depth to explore"),
 ) -> None:
     """Find files related to a given file."""
+    from ..retrieval.context import get_file_context
+
     brief_path = get_brief_path(base)
 
     if not brief_path.exists():
@@ -248,6 +250,9 @@ def context_search(
     mode: str = typer.Option("hybrid", "--mode", "-m", help="Search mode: semantic, keyword, hybrid"),
 ) -> None:
     """Search the codebase semantically."""
+    from ..retrieval.search import hybrid_search, keyword_search, semantic_search
+    from ..retrieval.embeddings import is_embedding_api_available
+
     brief_path = get_brief_path(base)
 
     if not brief_path.exists():
@@ -304,7 +309,7 @@ def context_embed(
     Example:
         brief context embed    # Generate embeddings for all descriptions
     """
-    from ..retrieval.embeddings import embed_all_descriptions
+    from ..retrieval.embeddings import embed_all_descriptions, is_embedding_api_available
     from ..config import CONTEXT_DIR
 
     brief_path = get_brief_path(base)

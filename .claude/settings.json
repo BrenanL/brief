@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/session-start.sh",
-            "timeout": 5
+            "command": "$CLAUDE_PROJECT_DIR/.brief/hooks/session-start.sh",
+            "timeout": 15
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/pre-compact.sh",
+            "command": "$CLAUDE_PROJECT_DIR/.brief/hooks/pre-compact.sh",
             "timeout": 5
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/user-prompt.sh",
+            "command": "$CLAUDE_PROJECT_DIR/.brief/hooks/user-prompt.sh",
             "timeout": 5
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/scripts/hooks/pre-tool-use.sh",
+            "command": "$CLAUDE_PROJECT_DIR/.brief/hooks/pre-tool-use.sh",
             "timeout": 5
           }
         ]

@@ -9,7 +9,42 @@ app = typer.Typer(
     name="brief",
     help="Context infrastructure for AI coding agents - deterministic context packages for convergent code generation",
     no_args_is_help=True,
+    rich_markup_mode="rich",
+    epilog="[dim]Quick start: brief setup -d  |  Try: brief ctx \"your query\"  |  Typer tab completions: brief --install-completion[/dim]",
 )
+
+
+# --- "Did you mean?" suggestion system ---
+# Maps subcommand group names to their most common subcommand suggestions.
+_SUBCOMMAND_SUGGESTIONS: dict[str, list[str]] = {
+    "task": ["list", "create", "show", "start", "done"],
+    "context": ["get", "search", "embed"],
+    "analyze": ["all", "file", "dir", "refresh"],
+    "describe": ["file", "batch", "module"],
+    "memory": ["remember", "recall", "list"],
+    "trace": ["list", "show", "define"],
+    "contracts": ["detect", "show", "list"],
+    "config": ["show", "set"],
+    "model": ["list", "set"],
+    "logs": ["show", "tail"],
+}
+
+
+def _make_suggestion_callback(group_name: str):
+    """Create a callback that shows suggestions when a subcommand group is invoked bare."""
+    def callback(ctx: typer.Context) -> None:
+        if ctx.invoked_subcommand is None:
+            suggestions = _SUBCOMMAND_SUGGESTIONS.get(group_name, [])
+            typer.echo(f"Missing command for 'brief {group_name}'.", err=True)
+            typer.echo("", err=True)
+            if suggestions:
+                typer.echo("Did you mean one of these?", err=True)
+                for s in suggestions:
+                    typer.echo(f"  brief {group_name} {s}", err=True)
+                typer.echo("", err=True)
+            typer.echo(f"Use 'brief {group_name} --help' for all available commands.", err=True)
+            raise typer.Exit(1)
+    return callback
 
 
 @app.callback()
@@ -30,11 +65,15 @@ def _run_quick_query(query: str, base: Path) -> None:
     from .retrieval.context import build_context_for_query
     from .retrieval.search import hybrid_search
     from .commands.context import _get_auto_generate_default, _check_manifest_has_files
+    from .analysis.manifest import ensure_manifest_current
 
     brief_path = get_brief_path(base)
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
+
+    # Auto-sync manifest with disk (new, changed, deleted files)
+    ensure_manifest_current(brief_path, base)
 
     if not _check_manifest_has_files(brief_path):
         typer.echo("Error: No files in manifest. Run 'brief analyze all' first.", err=True)
@@ -60,7 +99,7 @@ def _run_quick_query(query: str, base: Path) -> None:
 
 
 # Quick context query command
-@app.command(name="q")
+@app.command(name="q", rich_help_panel="Context Queries")
 def query_shortcut(
     query: str = typer.Argument(..., help="Query for context"),
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
@@ -70,6 +109,21 @@ def query_shortcut(
     Example:
         brief q "add logging to tracing"
         brief q "error handling patterns"
+    """
+    _run_quick_query(query, base)
+
+
+# Context query alias (brief ctx "query")
+@app.command(name="ctx", rich_help_panel="Context Queries")
+def ctx_shortcut(
+    query: str = typer.Argument(..., help="Query for context"),
+    base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
+) -> None:
+    """Quick context lookup (alias for 'context get').
+
+    Example:
+        brief ctx "authentication flow"
+        brief ctx "how does search work"
     """
     _run_quick_query(query, base)
 
@@ -91,62 +145,50 @@ from .commands import model as model_cmd
 from .commands import logs as logs_cmd
 
 # Register init as a direct command (not a subcommand)
-app.command(name="init")(init_cmd.init)
+app.command(name="init", rich_help_panel="Getting Started")(init_cmd.init)
 
 # Register setup wizard as a direct command
-app.command(name="setup")(setup_cmd.setup)
+app.command(name="setup", rich_help_panel="Getting Started")(setup_cmd.setup)
 
 # Register reset as a direct command
-app.command(name="reset")(reset_cmd.reset)
+app.command(name="reset", rich_help_panel="Advanced")(reset_cmd.reset)
 
-# Register analyze commands as a subcommand group
-app.add_typer(analyze_cmd.app, name="analyze")
+# Register subcommand groups with "did you mean?" callbacks and help panels
+_subcommand_groups = {
+    "context": (context_cmd.app, "Context Queries"),
+    "analyze": (analyze_cmd.app, "Analysis"),
+    "describe": (describe_cmd.app, "Analysis"),
+    "task": (task_cmd.app, "Task Management"),
+    "memory": (memory_cmd.app, "Context Queries"),
+    "trace": (trace_cmd.app, "Analysis"),
+    "contracts": (contracts_cmd.app, "Analysis"),
+    "config": (config_cmd.app, "Advanced"),
+    "model": (model_cmd.app, "Advanced"),
+    "logs": (logs_cmd.app, "Advanced"),
+}
+
+for group_name, (group_app, panel) in _subcommand_groups.items():
+    group_app.info.invoke_without_command = True
+    group_app.registered_callback = None  # Clear any existing
+    group_app.callback()(_make_suggestion_callback(group_name))
+    app.add_typer(group_app, name=group_name, rich_help_panel=panel)
 
 # Register individual report commands at top level
-app.command(name="overview")(report_cmd.overview)
-app.command(name="tree")(report_cmd.tree)
-app.command(name="deps")(report_cmd.deps)
-app.command(name="coverage")(report_cmd.coverage_cmd)
-app.command(name="stale")(report_cmd.stale)
-app.command(name="inventory")(report_cmd.inventory)
-app.command(name="status")(report_cmd.status)
-
-
-# Register describe commands as a subcommand group
-app.add_typer(describe_cmd.app, name="describe")
-
-
-# Register context commands as a subcommand group
-app.add_typer(context_cmd.app, name="context")
-
-# Register task commands as a subcommand group
-app.add_typer(task_cmd.app, name="task")
-
-# Register memory commands as a subcommand group
-app.add_typer(memory_cmd.app, name="memory")
+app.command(name="status", rich_help_panel="Getting Started")(report_cmd.status)
+app.command(name="overview", rich_help_panel="Reports")(report_cmd.overview)
+app.command(name="tree", rich_help_panel="Reports")(report_cmd.tree)
+app.command(name="deps", rich_help_panel="Reports")(report_cmd.deps)
+app.command(name="coverage", rich_help_panel="Reports")(report_cmd.coverage_cmd)
+app.command(name="stale", rich_help_panel="Reports")(report_cmd.stale)
+app.command(name="inventory", rich_help_panel="Reports")(report_cmd.inventory)
 
 # Register top-level aliases for common memory commands
-app.command(name="remember")(memory_cmd.memory_add)
-app.command(name="recall")(memory_cmd.memory_get)
-
-# Register trace commands as a subcommand group
-app.add_typer(trace_cmd.app, name="trace")
-
-# Register contracts commands as a subcommand group
-app.add_typer(contracts_cmd.app, name="contracts")
-
-# Register config commands as a subcommand group
-app.add_typer(config_cmd.app, name="config")
-
-# Register model commands as a subcommand group
-app.add_typer(model_cmd.app, name="model")
-
-# Register logs commands as a subcommand group
-app.add_typer(logs_cmd.app, name="logs")
+app.command(name="remember", rich_help_panel="Context Queries")(memory_cmd.memory_add)
+app.command(name="recall", rich_help_panel="Context Queries")(memory_cmd.memory_get)
 
 
 # Resume command - top-level for easy access
-@app.command(name="resume")
+@app.command(name="resume", rich_help_panel="Task Management")
 def resume(
     base: Path = typer.Option(Path("."), "--base", "-b", help="Base path"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output to file"),
@@ -164,6 +206,7 @@ def resume(
         brief resume --output resume-context.md
     """
     from .config import get_brief_path
+    from .storage import read_json
     from .tasks.manager import TaskManager
     from .retrieval.context import build_context_for_query
     from .retrieval.search import hybrid_search
@@ -173,6 +216,15 @@ def resume(
     if not brief_path.exists():
         typer.echo("Error: Brief not initialized. Run 'brief init' first.", err=True)
         raise typer.Exit(1)
+
+    # Check if tasks are enabled — fall back to status if not
+    config = read_json(brief_path / "config.json")
+    if not config.get("enable_tasks", False):
+        from .commands.report import status as status_cmd
+        typer.echo("Task system is not enabled — showing project status instead.")
+        typer.echo("")
+        status_cmd(base=base)
+        return
 
     manager = TaskManager(brief_path)
     task = manager.get_active_task()

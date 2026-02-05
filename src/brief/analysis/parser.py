@@ -123,18 +123,38 @@ class PythonFileParser:
     ) -> ManifestFunctionRecord:
         """Create a function record from an AST node."""
         params = []
+        # Positional-only args (before / in signature)
+        for arg in node.args.posonlyargs:
+            params.append(ParamInfo(
+                name=arg.arg,
+                type_hint=extract_type_annotation(arg.annotation)
+            ))
+        # Regular positional args
         for arg in node.args.args:
             params.append(ParamInfo(
                 name=arg.arg,
                 type_hint=extract_type_annotation(arg.annotation)
             ))
 
-        # Handle defaults (they align to the end of args)
+        # Handle defaults (they align to the end of posonlyargs + args)
         defaults = node.args.defaults
-        if defaults:
+        if defaults and params:
             offset = len(params) - len(defaults)
             for i, default in enumerate(defaults):
-                params[offset + i].default = extract_default_value(default)
+                idx = offset + i
+                if 0 <= idx < len(params):
+                    params[idx].default = extract_default_value(default)
+
+        # Keyword-only args (after * in signature)
+        for j, arg in enumerate(node.args.kwonlyargs):
+            kw_default = None
+            if j < len(node.args.kw_defaults) and node.args.kw_defaults[j] is not None:
+                kw_default = extract_default_value(node.args.kw_defaults[j])
+            params.append(ParamInfo(
+                name=arg.arg,
+                type_hint=extract_type_annotation(arg.annotation),
+                default=kw_default,
+            ))
 
         returns = extract_type_annotation(node.returns)
         is_generator = any(

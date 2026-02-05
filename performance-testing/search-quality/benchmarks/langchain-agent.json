@@ -1,0 +1,352 @@
+{
+  "corpus": "langchain-agent",
+  "corpus_description": "LangChain framework — agent-realistic queries simulating how Claude Code would query brief context get after receiving user instructions",
+  "k": 5,
+  "tiers": {
+    "implementation_location": {
+      "description": "Agent needs to find where specific functionality is implemented — the most common agent query type",
+      "queries": [
+        {
+          "query": "conversation buffer memory implementation",
+          "expected": ["libs/langchain/langchain_classic/memory/buffer.py"],
+          "notes": "Agent told to modify conversation memory"
+        },
+        {
+          "query": "retrieval QA chain implementation",
+          "expected": ["libs/langchain/langchain_classic/chains/retrieval_qa/base.py"],
+          "notes": "Agent told to fix/extend retrieval QA"
+        },
+        {
+          "query": "chat prompt template formatting",
+          "expected": ["libs/core/langchain_core/prompts/chat.py"],
+          "notes": "Agent needs to understand prompt construction"
+        },
+        {
+          "query": "JSON output parser",
+          "expected": ["libs/core/langchain_core/output_parsers/json.py"],
+          "notes": "Agent told to fix JSON parsing bug"
+        },
+        {
+          "query": "sequential chain implementation",
+          "expected": ["libs/langchain/langchain_classic/chains/sequential.py"],
+          "notes": "Agent told to add async support to sequential chain"
+        },
+        {
+          "query": "multi query retriever",
+          "expected": ["libs/langchain/langchain_classic/retrievers/multi_query.py"],
+          "notes": "Agent told to modify multi-query retrieval"
+        },
+        {
+          "query": "runnable branch conditional logic",
+          "expected": ["libs/core/langchain_core/runnables/branch.py"],
+          "notes": "Agent investigating branching behavior"
+        },
+        {
+          "query": "Anthropic chat model implementation",
+          "expected": ["libs/partners/anthropic/langchain_anthropic/chat_models.py"],
+          "notes": "Agent told to add feature to Anthropic integration"
+        },
+        {
+          "query": "OpenAI chat model base class",
+          "expected": ["libs/partners/openai/langchain_openai/chat_models/base.py"],
+          "notes": "Agent needs to understand OpenAI integration"
+        },
+        {
+          "query": "callback manager for chain runs",
+          "expected": ["libs/core/langchain_core/callbacks/manager.py"],
+          "notes": "Agent debugging callback propagation"
+        },
+        {
+          "query": "pydantic output parser",
+          "expected": ["libs/core/langchain_core/output_parsers/pydantic.py"],
+          "notes": "Agent fixing pydantic parsing"
+        },
+        {
+          "query": "semantic similarity example selector",
+          "expected": ["libs/core/langchain_core/example_selectors/semantic_similarity.py"],
+          "notes": "Agent modifying example selection"
+        },
+        {
+          "query": "character text splitter",
+          "expected": ["libs/text-splitters/langchain_text_splitters/character.py"],
+          "notes": "Agent told to adjust splitting logic"
+        },
+        {
+          "query": "recursive text splitter implementation",
+          "expected": ["libs/text-splitters/langchain_text_splitters/character.py"],
+          "notes": "RecursiveCharacterTextSplitter is in character.py"
+        },
+        {
+          "query": "vector store base class",
+          "expected": ["libs/core/langchain_core/vectorstores/base.py"],
+          "notes": "Agent needs vector store interface"
+        },
+        {
+          "query": "chroma vector store",
+          "expected": ["libs/partners/chroma/langchain_chroma/vectorstores.py"],
+          "notes": "Agent modifying Chroma integration"
+        },
+        {
+          "query": "router chain base",
+          "expected": ["libs/langchain/langchain_classic/chains/router/base.py"],
+          "notes": "Agent working on chain routing"
+        },
+        {
+          "query": "few shot prompt template",
+          "expected": ["libs/core/langchain_core/prompts/few_shot.py"],
+          "notes": "Agent modifying few-shot prompts"
+        },
+        {
+          "query": "structured tool definition",
+          "expected": ["libs/core/langchain_core/tools/structured.py"],
+          "notes": "Agent adding new tool type"
+        },
+        {
+          "query": "AI message class",
+          "expected": ["libs/core/langchain_core/messages/ai.py"],
+          "notes": "Agent modifying message handling"
+        }
+      ]
+    },
+    "interface_pattern": {
+      "description": "Agent needs to understand base classes, interfaces, or patterns to follow when implementing something new",
+      "queries": [
+        {
+          "query": "base retriever interface",
+          "expected": ["libs/core/langchain_core/retrievers.py"],
+          "notes": "Agent creating a new retriever"
+        },
+        {
+          "query": "base tool class definition",
+          "expected": ["libs/core/langchain_core/tools/base.py"],
+          "notes": "Agent creating a new tool"
+        },
+        {
+          "query": "base chat model class",
+          "expected": ["libs/core/langchain_core/language_models/chat_models.py"],
+          "notes": "Agent creating a new chat model provider"
+        },
+        {
+          "query": "output parser base class",
+          "expected": ["libs/core/langchain_core/output_parsers/base.py"],
+          "notes": "Agent creating a new output parser"
+        },
+        {
+          "query": "callback handler base class",
+          "expected": ["libs/core/langchain_core/callbacks/base.py"],
+          "notes": "Agent creating a new callback handler"
+        },
+        {
+          "query": "text splitter interface",
+          "expected": ["libs/text-splitters/langchain_text_splitters/base.py"],
+          "notes": "Agent creating a new text splitter"
+        },
+        {
+          "query": "embeddings interface",
+          "expected": ["libs/core/langchain_core/embeddings/embeddings.py"],
+          "notes": "Agent creating a new embeddings provider"
+        },
+        {
+          "query": "document loader base class",
+          "expected": ["libs/core/langchain_core/document_loaders/base.py"],
+          "notes": "Agent creating a new document loader"
+        },
+        {
+          "query": "runnable interface and base class",
+          "expected": ["libs/core/langchain_core/runnables/base.py"],
+          "notes": "Agent needs to understand the runnable abstraction"
+        },
+        {
+          "query": "chain base class",
+          "expected": ["libs/langchain/langchain_classic/chains/base.py"],
+          "notes": "Agent creating a new chain type"
+        },
+        {
+          "query": "chat memory base class",
+          "expected": ["libs/langchain/langchain_classic/memory/chat_memory.py"],
+          "notes": "Agent creating a new memory type"
+        },
+        {
+          "query": "evaluation interface and types",
+          "expected": ["libs/langchain/langchain_classic/evaluation/schema.py"],
+          "notes": "Agent creating a new evaluator"
+        },
+        {
+          "query": "agent base class single action",
+          "expected": ["libs/langchain/langchain_classic/agents/agent.py"],
+          "notes": "Agent creating a new agent type"
+        },
+        {
+          "query": "document class definition",
+          "expected": ["libs/core/langchain_core/documents/base.py"],
+          "notes": "Agent needs to understand Document model"
+        },
+        {
+          "query": "runnable config and configuration",
+          "expected": ["libs/core/langchain_core/runnables/config.py"],
+          "notes": "Agent working with runnable configuration"
+        }
+      ]
+    },
+    "feature_modification": {
+      "description": "Agent needs to modify existing functionality — queries reflect understanding what to change",
+      "queries": [
+        {
+          "query": "streaming in chat models",
+          "expected": ["libs/core/langchain_core/language_models/chat_models.py"],
+          "notes": "Agent adding/fixing streaming"
+        },
+        {
+          "query": "tool calling in Anthropic models",
+          "expected": ["libs/partners/anthropic/langchain_anthropic/chat_models.py"],
+          "notes": "Agent fixing tool call handling"
+        },
+        {
+          "query": "OpenAI embeddings batch processing",
+          "expected": ["libs/partners/openai/langchain_openai/embeddings/base.py"],
+          "notes": "Agent optimizing embedding batching"
+        },
+        {
+          "query": "how chains handle errors and exceptions",
+          "expected": ["libs/langchain/langchain_classic/chains/base.py"],
+          "notes": "Agent adding error handling to chains"
+        },
+        {
+          "query": "conversation window memory sliding window",
+          "expected": ["libs/langchain/langchain_classic/memory/buffer_window.py"],
+          "notes": "Agent modifying window size behavior"
+        },
+        {
+          "query": "html text splitting by headers",
+          "expected": ["libs/text-splitters/langchain_text_splitters/html.py"],
+          "notes": "Agent fixing HTML splitting"
+        },
+        {
+          "query": "runnable passthrough assign",
+          "expected": ["libs/core/langchain_core/runnables/passthrough.py"],
+          "notes": "Agent working with RunnablePassthrough.assign"
+        },
+        {
+          "query": "file callback handler logging",
+          "expected": ["libs/core/langchain_core/callbacks/file.py"],
+          "notes": "Agent modifying callback file logging"
+        },
+        {
+          "query": "stdout callback handler",
+          "expected": ["libs/core/langchain_core/callbacks/stdout.py"],
+          "notes": "Agent modifying console output"
+        },
+        {
+          "query": "comma separated list output parser",
+          "expected": ["libs/core/langchain_core/output_parsers/list.py"],
+          "notes": "Agent fixing list parsing"
+        },
+        {
+          "query": "dynamic runnable configuration",
+          "expected": ["libs/core/langchain_core/runnables/configurable.py"],
+          "notes": "Agent working with configurable runnables"
+        },
+        {
+          "query": "API chain for making HTTP requests",
+          "expected": ["libs/langchain/langchain_classic/chains/api/base.py"],
+          "notes": "Agent modifying API chain"
+        },
+        {
+          "query": "Azure OpenAI chat model",
+          "expected": ["libs/partners/openai/langchain_openai/chat_models/azure.py"],
+          "notes": "Agent fixing Azure-specific behavior"
+        },
+        {
+          "query": "map reduce document combination",
+          "expected": ["libs/langchain/langchain_classic/chains/combine_documents/map_reduce.py"],
+          "notes": "Agent modifying map-reduce chain"
+        },
+        {
+          "query": "JSON recursive text splitter",
+          "expected": ["libs/text-splitters/langchain_text_splitters/json.py"],
+          "notes": "Agent fixing JSON splitting"
+        }
+      ]
+    },
+    "conceptual_task": {
+      "description": "Agent receives a high-level user instruction and needs to find relevant code — the hardest but most realistic scenario",
+      "queries": [
+        {
+          "query": "add retry logic when LLM calls fail",
+          "expected": ["libs/core/langchain_core/language_models/chat_models.py"],
+          "notes": "User said 'make it retry on failure' - agent needs chat model base"
+        },
+        {
+          "query": "keep track of conversation history between turns",
+          "expected": ["libs/langchain/langchain_classic/memory/buffer.py"],
+          "notes": "User said 'remember the conversation' - agent needs memory"
+        },
+        {
+          "query": "validate and structure LLM output format",
+          "expected": ["libs/core/langchain_core/output_parsers/pydantic.py"],
+          "notes": "User said 'make sure the output is valid JSON matching my schema'"
+        },
+        {
+          "query": "combine results from multiple data sources",
+          "expected": ["libs/langchain/langchain_classic/chains/combine_documents/base.py"],
+          "notes": "User said 'merge the results from different retrievers'"
+        },
+        {
+          "query": "break large documents into processable pieces",
+          "expected": ["libs/text-splitters/langchain_text_splitters/base.py"],
+          "notes": "User said 'the document is too large for the context window'"
+        },
+        {
+          "query": "choose which processing path based on input type",
+          "expected": ["libs/core/langchain_core/runnables/branch.py"],
+          "notes": "User said 'route different types of queries differently'"
+        },
+        {
+          "query": "find the most relevant documents for a question",
+          "expected": ["libs/core/langchain_core/retrievers.py"],
+          "notes": "User said 'search the knowledge base for relevant info'"
+        },
+        {
+          "query": "log what the LLM is doing at each step",
+          "expected": ["libs/core/langchain_core/callbacks/manager.py"],
+          "notes": "User said 'I need to debug what's happening in the chain'"
+        },
+        {
+          "query": "convert text into numerical representations for search",
+          "expected": ["libs/core/langchain_core/embeddings/embeddings.py"],
+          "notes": "User said 'set up vector search for my documents'"
+        },
+        {
+          "query": "give the model examples of expected behavior",
+          "expected": ["libs/core/langchain_core/prompts/few_shot.py"],
+          "notes": "User said 'add few-shot examples to the prompt'"
+        },
+        {
+          "query": "let the model call external functions",
+          "expected": ["libs/core/langchain_core/tools/base.py"],
+          "notes": "User said 'give the model access to our API'"
+        },
+        {
+          "query": "check if the model's answer is correct",
+          "expected": ["libs/langchain/langchain_classic/evaluation/schema.py"],
+          "notes": "User said 'evaluate the quality of responses'"
+        },
+        {
+          "query": "store and search document embeddings persistently",
+          "expected": ["libs/core/langchain_core/vectorstores/base.py"],
+          "notes": "User said 'save the vectors so we don't re-embed every time'"
+        },
+        {
+          "query": "pass data through a pipeline of processing steps",
+          "expected": ["libs/core/langchain_core/runnables/base.py"],
+          "notes": "User said 'chain these operations together'"
+        },
+        {
+          "query": "only keep the last few messages to save tokens",
+          "expected": ["libs/langchain/langchain_classic/memory/buffer_window.py"],
+          "notes": "User said 'the context window is filling up, trim old messages'"
+        }
+      ]
+    }
+  }
+}
